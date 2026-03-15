@@ -19,3 +19,4 @@ rm -f l8api.proto
 
 cd ../go
 find . -name "*.go" -type f -exec sed -i 's|"./types/l8agent"|"github.com/saichler/l8agent/go/types/l8agent"|g' {} +
+find . -name "*.go" -type f -exec sed -i 's|"./types/l8api"|"github.com/saichler/l8types/go/types/l8api"|g' {} +

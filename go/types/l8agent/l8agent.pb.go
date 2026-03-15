@@ -23,7 +23,7 @@
 package l8agent
 
 import (
-	l8api "./types/l8api"
+	l8api "github.com/saichler/l8types/go/types/l8api"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
