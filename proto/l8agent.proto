@@ -1,0 +1,143 @@
+// © 2025 Sharon Aicler (saichler@gmail.com)
+//
+// Layer 8 Ecosystem is licensed under the Apache License, Version 2.0.
+// You may obtain a copy of the License at:
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// l8agent.proto defines the types for the Layer 8 AI Agent shared library.
+// These types are used by all Layer 8 projects that integrate the AI agent.
+
+syntax = "proto3";
+
+package l8agent;
+
+option go_package = "./types/l8agent";
+
+import "l8api.proto";
+
+// L8AgentConversation - Prime Object
+// Passes Prime Object test: independent lifecycle, queried directly,
+// meaningful on its own (conversation history)
+message L8AgentConversation {
+    string conversation_id = 1;
+    string user_id = 2;
+    string title = 3;
+    int32 status = 4;                    // L8AgentConvoStatus enum
+    repeated L8AgentMessage messages = 5;  // Embedded child - not independent
+    int64 created_at = 6;
+    int64 updated_at = 7;
+}
+
+// L8AgentMessage - Embedded child (NOT a Prime Object)
+// Fails Prime Object test: meaningless without a conversation,
+// always created/viewed within conversation context
+message L8AgentMessage {
+    string message_id = 1;
+    int32 role = 2;                      // L8AgentMessageRole enum
+    string content = 3;
+    repeated L8AgentToolCall tool_calls = 4;
+    repeated L8AgentToolResult tool_results = 5;
+    int64 timestamp = 6;
+    int32 token_count = 7;
+}
+
+// L8AgentToolCall - Embedded child within L8AgentMessage
+message L8AgentToolCall {
+    string tool_call_id = 1;
+    string tool_name = 2;
+    string tool_input = 3;               // JSON string
+}
+
+// L8AgentToolResult - Embedded child within L8AgentMessage
+message L8AgentToolResult {
+    string tool_call_id = 1;
+    string result = 2;                   // JSON string
+    bool is_error = 3;
+}
+
+// L8AgentPrompt - Prime Object
+// Passes Prime Object test: independent lifecycle, queried across all users,
+// reusable templates not tied to a single conversation
+message L8AgentPrompt {
+    string prompt_id = 1;
+    string name = 2;
+    string description = 3;
+    string system_prompt = 4;            // The prompt template text
+    int32 category = 5;                  // L8AgentPromptCategory enum
+    int32 status = 6;                    // L8AgentPromptStatus enum
+    repeated string allowed_modules = 7; // Module keys the prompt can access
+    string created_by = 8;
+}
+
+// L8AgentChatRequest - NOT a Prime Object, not stored
+// Transient request payload for the chat endpoint
+message L8AgentChatRequest {
+    string conversation_id = 1;          // Empty = new conversation
+    string message = 2;                  // User's message
+    string prompt_id = 3;               // Optional: use a specific prompt template
+    repeated string allowed_modules = 4; // Optional: restrict modules for this request
+}
+
+// L8AgentChatResponse - NOT a Prime Object, not stored
+// Transient response payload
+message L8AgentChatResponse {
+    string conversation_id = 1;
+    string response = 2;                 // Agent's text response
+    repeated L8AgentDataResult data_results = 3;
+    int32 tool_calls_made = 4;
+    int32 total_tokens = 5;
+}
+
+// L8AgentDataResult - Embedded in L8AgentChatResponse
+message L8AgentDataResult {
+    string model_name = 1;
+    string query = 2;
+    string data_json = 3;               // JSON array of results
+    int32 total_count = 4;
+}
+
+// List types
+message L8AgentConversationList {
+    repeated L8AgentConversation list = 1;
+    l8api.L8MetaData metadata = 2;
+}
+
+message L8AgentPromptList {
+    repeated L8AgentPrompt list = 1;
+    l8api.L8MetaData metadata = 2;
+}
+
+// Enums
+enum L8AgentConvoStatus {
+    L8_AGENT_CONVO_STATUS_UNSPECIFIED = 0;
+    L8_AGENT_CONVO_STATUS_ACTIVE = 1;
+    L8_AGENT_CONVO_STATUS_ARCHIVED = 2;
+}
+
+enum L8AgentMessageRole {
+    L8_AGENT_MESSAGE_ROLE_UNSPECIFIED = 0;
+    L8_AGENT_MESSAGE_ROLE_USER = 1;
+    L8_AGENT_MESSAGE_ROLE_ASSISTANT = 2;
+    L8_AGENT_MESSAGE_ROLE_SYSTEM = 3;
+}
+
+enum L8AgentPromptCategory {
+    L8_AGENT_PROMPT_CATEGORY_UNSPECIFIED = 0;
+    L8_AGENT_PROMPT_CATEGORY_GENERAL = 1;
+    L8_AGENT_PROMPT_CATEGORY_REPORTING = 2;
+    L8_AGENT_PROMPT_CATEGORY_WORKFLOW = 3;
+    L8_AGENT_PROMPT_CATEGORY_ANALYSIS = 4;
+}
+
+enum L8AgentPromptStatus {
+    L8_AGENT_PROMPT_STATUS_UNSPECIFIED = 0;
+    L8_AGENT_PROMPT_STATUS_ACTIVE = 1;
+    L8_AGENT_PROMPT_STATUS_INACTIVE = 2;
+}
