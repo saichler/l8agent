@@ -14,7 +14,6 @@ import (
 	"github.com/saichler/l8agent/go/llm"
 	"github.com/saichler/l8agent/go/masking"
 	"github.com/saichler/l8agent/go/schema"
-	"github.com/saichler/l8agent/go/tools"
 	"github.com/saichler/l8agent/go/types/l8agent"
 	"github.com/saichler/l8types/go/ifs"
 	"github.com/saichler/l8types/go/types/l8api"

@@ -1,5 +1,5 @@
 /*
-© 2025 Sharon Aicler (saichler@gmail.com)
+(c) 2025 Sharon Aicler (saichler@gmail.com)
 
 Layer 8 Ecosystem is licensed under the Apache License, Version 2.0.
 */
@@ -11,6 +11,7 @@ package schema
 import (
 	"bytes"
 	"github.com/saichler/l8types/go/ifs"
+	"github.com/saichler/l8types/go/types/l8reflect"
 )
 
 // Provider generates schema metadata from the project's introspector.
@@ -43,9 +44,9 @@ func (p *Provider) DescribeModel(modelName string) string {
 	buff.WriteString(node.TypeName)
 	buff.WriteString("\nFields:\n")
 
-	for _, attr := range node.Attributes {
+	for name, attr := range node.Attributes {
 		buff.WriteString("  - ")
-		buff.WriteString(attr.FieldName)
+		buff.WriteString(name)
 		buff.WriteString(" (")
 		buff.WriteString(attr.TypeName)
 		buff.WriteString(")\n")
@@ -59,14 +60,15 @@ func (p *Provider) buildTier1() string {
 	buff := bytes.Buffer{}
 	buff.WriteString("Available models and services:\n")
 
-	nodes := p.resources.Introspector().AllNodes()
+	// Nodes(rootsOnly, structsOnly) - get all root struct nodes
+	nodes := p.resources.Introspector().Nodes(true, true)
 	for _, node := range nodes {
 		if node == nil {
 			continue
 		}
 		buff.WriteString("- ")
 		buff.WriteString(node.TypeName)
-		pk := p.resources.Introspector().Decorators().PrimaryKeyOf(node.TypeName)
+		pk := p.primaryKeyOf(node)
 		if pk != "" {
 			buff.WriteString(" (pk: ")
 			buff.WriteString(pk)
@@ -76,6 +78,15 @@ func (p *Provider) buildTier1() string {
 	}
 
 	return buff.String()
+}
+
+// primaryKeyOf extracts the primary key field name for a node using decorators.
+func (p *Provider) primaryKeyOf(node *l8reflect.L8Node) string {
+	fields, err := p.resources.Introspector().Decorators().Fields(node, l8reflect.L8DecoratorType_Primary)
+	if err != nil || len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
 }
 
 // RefreshCache regenerates the Tier 1 cache.

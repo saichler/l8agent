@@ -46,44 +46,44 @@ func (h *chatHandler) DeActivate() error {
 
 func (h *chatHandler) Post(elem ifs.IElements, vnic ifs.IVNic) ifs.IElements {
 	if elem.Element() == nil {
-		return object.New(errMsg("no request body"))
+		return object.New(errMsg("no request body"), nil)
 	}
 
 	req, ok := elem.Element().(*l8agent.L8AgentChatRequest)
 	if !ok {
-		return object.New(errMsg("invalid L8AgentChatRequest type"))
+		return object.New(errMsg("invalid L8AgentChatRequest type"), nil)
 	}
 
 	if req.Message == "" {
-		return object.New(errMsg("message is required"))
+		return object.New(errMsg("message is required"), nil)
 	}
 
 	resp, err := orchestrate(h, req, vnic)
 	if err != nil {
-		return object.New(err)
+		return object.New(err, nil)
 	}
 
 	return object.New(nil, resp)
 }
 
 func (h *chatHandler) Put(elem ifs.IElements, vnic ifs.IVNic) ifs.IElements {
-	return object.New(nil)
+	return object.New(nil, nil)
 }
 
 func (h *chatHandler) Patch(elem ifs.IElements, vnic ifs.IVNic) ifs.IElements {
-	return object.New(nil)
+	return object.New(nil, nil)
 }
 
 func (h *chatHandler) Delete(elem ifs.IElements, vnic ifs.IVNic) ifs.IElements {
-	return object.New(nil)
+	return object.New(nil, nil)
 }
 
 func (h *chatHandler) Get(elem ifs.IElements, vnic ifs.IVNic) ifs.IElements {
-	return object.New(nil)
+	return object.New(nil, nil)
 }
 
 func (h *chatHandler) Failed(elem ifs.IElements, vnic ifs.IVNic, msg *ifs.Message) ifs.IElements {
-	return object.New(nil)
+	return object.New(nil, nil)
 }
 
 func (h *chatHandler) TransactionConfig() ifs.ITransactionConfig {
