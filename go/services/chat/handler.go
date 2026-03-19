@@ -56,7 +56,7 @@ func (h *chatHandler) Activate(sla *ifs.ServiceLevelAgreement, vnic ifs.IVNic) e
 	}
 
 	// Print all models in the introspector
-	nodes := vnic.Resources().Introspector().Nodes(true, true)
+	nodes := vnic.Resources().Introspector().Nodes(false, true)
 	fmt.Println("[agent] Introspector models (", len(nodes), "):")
 	for _, node := range nodes {
 		fmt.Println("[agent]   -", node.TypeName)
