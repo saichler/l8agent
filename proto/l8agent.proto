@@ -22,44 +22,57 @@ option go_package = "./types/l8agent";
 
 import "l8api.proto";
 
-// L8AgentConversation - Prime Object
-// Passes Prime Object test: independent lifecycle, queried directly,
-// meaningful on its own (conversation history)
+// L8AgentConversation - Prime Object (metadata only, no messages)
+// Stored by internal OrmService, not exposed via web API directly.
+// Passes Prime Object test: independent lifecycle, queried directly.
 message L8AgentConversation {
     string conversation_id = 1;
     string user_id = 2;
     string title = 3;
     int32 status = 4;                    // L8AgentConvoStatus enum
-    repeated L8AgentMessage messages = 5;  // Embedded child - not independent
+    int64 created_at = 5;
+    int64 updated_at = 6;
+}
+
+message L8AgentConversationList {
+    repeated L8AgentConversation list = 1;
+    l8api.L8MetaData metadata = 2;
+}
+
+// L8AgentChatMessage - Prime Object
+// Individual chat message, stored separately for efficiency.
+// Stored by internal OrmService, not exposed via web API directly.
+message L8AgentChatMessage {
+    string conversation_id = 1;          // FK to conversation
+    int32 sequence = 2;                  // Order within conversation
+    bool is_llm = 3;                     // true = assistant, false = user
+    string message = 4;                  // Message content
+    repeated string allowed_modules = 5; // Modules context (for user messages)
+    int64 timestamp = 6;
+    int32 token_count = 7;              // LLM token usage (for assistant messages)
+}
+
+message L8AgentChatMessageList {
+    repeated L8AgentChatMessage list = 1;
+    l8api.L8MetaData metadata = 2;
+}
+
+// L8AgentChatConversation - Facade/pseudo model (NOT stored directly)
+// Assembled by AgntChat facade service from L8AgentConversation + L8AgentChatMessage.
+// This is the model exposed to the web API and UI.
+message L8AgentChatConversation {
+    string conversation_id = 1;
+    string user_id = 2;
+    string title = 3;
+    int32 status = 4;                    // L8AgentConvoStatus enum
+    repeated L8AgentChatMessage messages = 5;
     int64 created_at = 6;
     int64 updated_at = 7;
 }
 
-// L8AgentMessage - Embedded child (NOT a Prime Object)
-// Fails Prime Object test: meaningless without a conversation,
-// always created/viewed within conversation context
-message L8AgentMessage {
-    string message_id = 1;
-    int32 role = 2;                      // L8AgentMessageRole enum
-    string content = 3;
-    repeated L8AgentToolCall tool_calls = 4;
-    repeated L8AgentToolResult tool_results = 5;
-    int64 timestamp = 6;
-    int32 token_count = 7;
-}
-
-// L8AgentToolCall - Embedded child within L8AgentMessage
-message L8AgentToolCall {
-    string tool_call_id = 1;
-    string tool_name = 2;
-    string tool_input = 3;               // JSON string
-}
-
-// L8AgentToolResult - Embedded child within L8AgentMessage
-message L8AgentToolResult {
-    string tool_call_id = 1;
-    string result = 2;                   // JSON string
-    bool is_error = 3;
+message L8AgentChatConversationList {
+    repeated L8AgentChatConversation list = 1;
+    l8api.L8MetaData metadata = 2;
 }
 
 // L8AgentPrompt - Prime Object
@@ -76,39 +89,6 @@ message L8AgentPrompt {
     string created_by = 8;
 }
 
-// L8AgentChatRequest - NOT a Prime Object, not stored
-// Transient request payload for the chat endpoint
-message L8AgentChatRequest {
-    string conversation_id = 1;          // Empty = new conversation
-    string message = 2;                  // User's message
-    string prompt_id = 3;               // Optional: use a specific prompt template
-    repeated string allowed_modules = 4; // Optional: restrict modules for this request
-}
-
-// L8AgentChatResponse - NOT a Prime Object, not stored
-// Transient response payload
-message L8AgentChatResponse {
-    string conversation_id = 1;
-    string response = 2;                 // Agent's text response
-    repeated L8AgentDataResult data_results = 3;
-    int32 tool_calls_made = 4;
-    int32 total_tokens = 5;
-}
-
-// L8AgentDataResult - Embedded in L8AgentChatResponse
-message L8AgentDataResult {
-    string model_name = 1;
-    string query = 2;
-    string data_json = 3;               // JSON array of results
-    int32 total_count = 4;
-}
-
-// List types
-message L8AgentConversationList {
-    repeated L8AgentConversation list = 1;
-    l8api.L8MetaData metadata = 2;
-}
-
 message L8AgentPromptList {
     repeated L8AgentPrompt list = 1;
     l8api.L8MetaData metadata = 2;
@@ -119,13 +99,6 @@ enum L8AgentConvoStatus {
     L8_AGENT_CONVO_STATUS_UNSPECIFIED = 0;
     L8_AGENT_CONVO_STATUS_ACTIVE = 1;
     L8_AGENT_CONVO_STATUS_ARCHIVED = 2;
-}
-
-enum L8AgentMessageRole {
-    L8_AGENT_MESSAGE_ROLE_UNSPECIFIED = 0;
-    L8_AGENT_MESSAGE_ROLE_USER = 1;
-    L8_AGENT_MESSAGE_ROLE_ASSISTANT = 2;
-    L8_AGENT_MESSAGE_ROLE_SYSTEM = 3;
 }
 
 enum L8AgentPromptCategory {
