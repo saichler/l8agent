@@ -29,9 +29,7 @@ type MaskingOverrides = masking.OverrideFunc
 // AgentConfig is the configuration for initializing the agent.
 type AgentConfig struct {
 	Resources        ifs.IResources
-	Prefix           string              // API prefix (e.g., "/erp/")
 	ServiceArea      byte                // Service area for agent services
-	WebPort          int                 // Web server port for tool executor
 	DBCreds          string              // Database credential key
 	DBName           string              // Database name
 	MaskingOverrides MaskingOverrides    // Optional: project-specific field overrides
@@ -82,12 +80,12 @@ func InitializeChat(config AgentConfig, vnic ifs.IVNic) error {
 	maskingProxy := masking.NewProxy(maskingConfig)
 
 	// Create Tool Executor
-	toolExec := executor.NewToolExecutor(config.Prefix, config.Resources, schemaProvider, config.WebPort)
+	toolExec := executor.NewToolExecutor(vnic, schemaProvider)
 
 	// Activate Chat orchestration service
 	chat.Activate(config.ServiceArea, vnic, llmClient, schemaProvider, toolExec, maskingProxy)
 
-	fmt.Printf("[agent] AI Agent Chat service initialized (area=%d, prefix=%s)\n", config.ServiceArea, config.Prefix)
+	fmt.Printf("[agent] AI Agent Chat service initialized (area=%d)\n", config.ServiceArea)
 	return nil
 }
 

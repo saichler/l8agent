@@ -5,44 +5,36 @@ Layer 8 Ecosystem is licensed under the Apache License, Version 2.0.
 */
 
 // Package executor provides the Tool Executor that runs LLM tool calls
-// against Layer 8 service endpoints using internal HTTP requests.
+// against Layer 8 service endpoints using internal vnic requests.
 package executor
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"strings"
-	"time"
 
 	"github.com/saichler/l8agent/go/schema"
 	"github.com/saichler/l8types/go/ifs"
+	"github.com/saichler/l8types/go/types/l8api"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
-	toolCallTimeout = 10 * time.Second
+	requestTimeout = 30 // seconds
 )
 
-// ToolExecutor executes tool calls against Layer 8 service endpoints.
+// ToolExecutor executes tool calls against Layer 8 service endpoints via the vnic.
 type ToolExecutor struct {
-	prefix    string // e.g., "/erp/"
-	resources ifs.IResources
-	schema    *schema.Provider
-	webPort   int
-	client    *http.Client
+	vnic   ifs.IVNic
+	schema *schema.Provider
 }
 
 // NewToolExecutor creates a new ToolExecutor.
-func NewToolExecutor(prefix string, resources ifs.IResources, schema *schema.Provider, webPort int) *ToolExecutor {
+func NewToolExecutor(vnic ifs.IVNic, schema *schema.Provider) *ToolExecutor {
 	return &ToolExecutor{
-		prefix:    prefix,
-		resources: resources,
-		schema:    schema,
-		webPort:   webPort,
-		client:    &http.Client{Timeout: toolCallTimeout},
+		vnic:   vnic,
+		schema: schema,
 	}
 }
 
@@ -55,13 +47,13 @@ func (t *ToolExecutor) Execute(toolName string, input string, bearerToken string
 
 	switch toolName {
 	case "l8query":
-		return t.executeQuery(inputMap, bearerToken)
+		return t.executeQuery(inputMap)
 	case "create_record":
-		return t.executeCreate(inputMap, bearerToken)
+		return t.executeMutate(inputMap, ifs.POST)
 	case "update_record":
-		return t.executeUpdate(inputMap, bearerToken)
+		return t.executeMutate(inputMap, ifs.PUT)
 	case "delete_record":
-		return t.executeDelete(inputMap, bearerToken)
+		return t.executeDelete(inputMap)
 	case "list_modules":
 		return t.schema.GetTier1Schema(), nil
 	case "describe_model":
@@ -72,8 +64,8 @@ func (t *ToolExecutor) Execute(toolName string, input string, bearerToken string
 	}
 }
 
-// executeQuery runs an L8Query GET request against a service.
-func (t *ToolExecutor) executeQuery(input map[string]interface{}, bearerToken string) (string, error) {
+// executeQuery sends an L8Query GET request to a service via the vnic.
+func (t *ToolExecutor) executeQuery(input map[string]interface{}) (string, error) {
 	query, _ := input["query"].(string)
 	area, _ := input["area"].(float64)
 	service, _ := input["service"].(string)
@@ -82,46 +74,46 @@ func (t *ToolExecutor) executeQuery(input map[string]interface{}, bearerToken st
 		return "", errors.New("l8query requires 'query', 'area', and 'service'")
 	}
 
-	body := url.QueryEscape(fmt.Sprintf(`{"text":"%s"}`, query))
-	endpoint := fmt.Sprintf("%s%d/%s?body=%s", t.prefix, int(area), service, body)
+	elems := t.vnic.LeaderRequest(service, byte(area), ifs.GET, query, requestTimeout)
+	if elems.Error() != nil {
+		return "", elems.Error()
+	}
 
-	return t.doRequest("GET", endpoint, nil, bearerToken)
+	return t.marshalResponse(elems)
 }
 
-// executeCreate runs a POST request to create a record.
-func (t *ToolExecutor) executeCreate(input map[string]interface{}, bearerToken string) (string, error) {
+// executeMutate sends a POST or PUT request with JSON data to a service via the vnic.
+func (t *ToolExecutor) executeMutate(input map[string]interface{}, action ifs.Action) (string, error) {
 	area, _ := input["area"].(float64)
 	service, _ := input["service"].(string)
 	data, _ := input["data"].(map[string]interface{})
 
 	if service == "" || data == nil {
-		return "", errors.New("create_record requires 'area', 'service', and 'data'")
+		return "", fmt.Errorf("%s requires 'area', 'service', and 'data'", actionName(action))
 	}
 
-	endpoint := fmt.Sprintf("%s%d/%s", t.prefix, int(area), service)
-	jsonData, _ := json.Marshal(data)
-
-	return t.doRequest("POST", endpoint, jsonData, bearerToken)
-}
-
-// executeUpdate runs a PUT request to update a record.
-func (t *ToolExecutor) executeUpdate(input map[string]interface{}, bearerToken string) (string, error) {
-	area, _ := input["area"].(float64)
-	service, _ := input["service"].(string)
-	data, _ := input["data"].(map[string]interface{})
-
-	if service == "" || data == nil {
-		return "", errors.New("update_record requires 'area', 'service', and 'data'")
+	// Resolve the protobuf type from the service catalog
+	modelName := t.resolveModelName(service, int32(area))
+	if modelName == "" {
+		return "", fmt.Errorf("cannot resolve model type for service %s area %d", service, int(area))
 	}
 
-	endpoint := fmt.Sprintf("%s%d/%s", t.prefix, int(area), service)
-	jsonData, _ := json.Marshal(data)
+	// Create a new protobuf instance and unmarshal the JSON data into it
+	pbMsg, err := t.unmarshalToProto(modelName, data)
+	if err != nil {
+		return "", fmt.Errorf("failed to unmarshal data for %s: %s", modelName, err.Error())
+	}
 
-	return t.doRequest("PUT", endpoint, jsonData, bearerToken)
+	elems := t.vnic.LeaderRequest(service, byte(area), action, pbMsg, requestTimeout)
+	if elems.Error() != nil {
+		return "", elems.Error()
+	}
+
+	return t.marshalResponse(elems)
 }
 
-// executeDelete runs a DELETE request.
-func (t *ToolExecutor) executeDelete(input map[string]interface{}, bearerToken string) (string, error) {
+// executeDelete sends a DELETE request with an L8Query to a service via the vnic.
+func (t *ToolExecutor) executeDelete(input map[string]interface{}) (string, error) {
 	area, _ := input["area"].(float64)
 	service, _ := input["service"].(string)
 	query, _ := input["query"].(string)
@@ -130,45 +122,95 @@ func (t *ToolExecutor) executeDelete(input map[string]interface{}, bearerToken s
 		return "", errors.New("delete_record requires 'area', 'service', and 'query'")
 	}
 
-	endpoint := fmt.Sprintf("%s%d/%s", t.prefix, int(area), service)
-	jsonData, _ := json.Marshal(map[string]string{"text": query})
+	l8query := &l8api.L8Query{Text: query}
+	elems := t.vnic.LeaderRequest(service, byte(area), ifs.DELETE, l8query, requestTimeout)
+	if elems.Error() != nil {
+		return "", elems.Error()
+	}
 
-	return t.doRequest("DELETE", endpoint, jsonData, bearerToken)
+	return t.marshalResponse(elems)
 }
 
-// doRequest executes an HTTP request against the local web service.
-func (t *ToolExecutor) doRequest(method, endpoint string, body []byte, bearerToken string) (string, error) {
-	fullURL := fmt.Sprintf("http://127.0.0.1:%d%s", t.webPort, endpoint)
-
-	var bodyReader io.Reader
-	if body != nil {
-		bodyReader = strings.NewReader(string(body))
+// resolveModelName looks up the protobuf type name for a service name and area
+// from the local service registry.
+func (t *ToolExecutor) resolveModelName(serviceName string, serviceArea int32) string {
+	services := t.vnic.Resources().SysConfig().Services
+	if services == nil || services.ServiceToAreas == nil {
+		return ""
 	}
+	svcAreas, ok := services.ServiceToAreas[serviceName]
+	if !ok || svcAreas.Models == nil {
+		return ""
+	}
+	return svcAreas.Models[serviceArea]
+}
 
-	req, err := http.NewRequest(method, fullURL, bodyReader)
+// unmarshalToProto creates a new protobuf instance of the given type and
+// unmarshals JSON data into it.
+func (t *ToolExecutor) unmarshalToProto(modelName string, data map[string]interface{}) (proto.Message, error) {
+	info, err := t.vnic.Resources().Registry().Info(modelName)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("unknown model type %s: %s", modelName, err.Error())
 	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if bearerToken != "" {
-		req.Header.Set("Authorization", "Bearer "+bearerToken)
-	}
-
-	resp, err := t.client.Do(req)
+	instance, err := info.NewInstance()
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("failed to create instance of %s: %s", modelName, err.Error())
 	}
-	defer resp.Body.Close()
+	pbMsg, ok := instance.(proto.Message)
+	if !ok {
+		return nil, fmt.Errorf("type %s is not a proto.Message", modelName)
+	}
 
-	respBody, err := io.ReadAll(resp.Body)
+	jsonBytes, err := json.Marshal(data)
 	if err != nil {
-		return "", err
+		return nil, err
+	}
+	if err := protojson.Unmarshal(jsonBytes, pbMsg); err != nil {
+		return nil, err
+	}
+	return pbMsg, nil
+}
+
+// marshalResponse serializes the response elements to JSON.
+func (t *ToolExecutor) marshalResponse(elems ifs.IElements) (string, error) {
+	if elems.Element() == nil {
+		return "{}", nil
 	}
 
-	if resp.StatusCode >= 400 {
-		return "", fmt.Errorf("service error (%d): %s", resp.StatusCode, string(respBody))
+	// Try to convert to a list wrapper first
+	listProto, err := elems.AsList(t.vnic.Resources().Registry())
+	if err == nil && listProto != nil {
+		if msg, ok := listProto.(proto.Message); ok {
+			opts := protojson.MarshalOptions{UseEnumNumbers: true}
+			j, e := opts.Marshal(msg)
+			if e != nil {
+				return "", e
+			}
+			return string(j), nil
+		}
 	}
 
-	return string(respBody), nil
+	// Fall back to marshaling the single element
+	if msg, ok := elems.Element().(proto.Message); ok {
+		opts := protojson.MarshalOptions{UseEnumNumbers: true}
+		j, e := opts.Marshal(msg)
+		if e != nil {
+			return "", e
+		}
+		return string(j), nil
+	}
+
+	return "{}", nil
+}
+
+// actionName returns a human-readable name for an action.
+func actionName(action ifs.Action) string {
+	switch action {
+	case ifs.POST:
+		return "create_record"
+	case ifs.PUT:
+		return "update_record"
+	default:
+		return "unknown_action"
+	}
 }
