@@ -60,8 +60,8 @@ func (p *Provider) buildTier1() string {
 	buff := bytes.Buffer{}
 	buff.WriteString("Available models and services:\n")
 
-	// Nodes(rootsOnly, structsOnly) - get all root struct nodes
-	nodes := p.resources.Introspector().Nodes(true, true)
+	// Nodes(onlyLeafs, onlyRoots) - get all root nodes
+	nodes := p.resources.Introspector().Nodes(false, true)
 	for _, node := range nodes {
 		if node == nil {
 			continue
