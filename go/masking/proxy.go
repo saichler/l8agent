@@ -7,6 +7,7 @@ package masking
 
 import (
 	"encoding/json"
+	"regexp"
 )
 
 // Proxy is the Data Masking Proxy that masks/unmasks sensitive data.
@@ -34,6 +35,36 @@ func (p *Proxy) MaskJSON(jsonStr string, modelName string, tokenMap *TokenMap) s
 		return jsonStr
 	}
 	return string(result)
+}
+
+// Compiled regexes for free-text pattern detection.
+var (
+	ssnRegex   = regexp.MustCompile(`\b\d{3}-\d{2}-\d{4}\b`)
+	moneyRegex = regexp.MustCompile(`\$[\d,]+(?:\.\d{2})?`)
+	emailRegex = regexp.MustCompile(`\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b`)
+	phoneRegex = regexp.MustCompile(`\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{4}`)
+)
+
+// MaskText masks obvious sensitive patterns in free-form text (user prompts).
+// Detects SSNs, money amounts, emails, and phone numbers using regex.
+func (p *Proxy) MaskText(text string, tokenMap *TokenMap) string {
+	// SSN patterns → always mask
+	text = ssnRegex.ReplaceAllStringFunc(text, func(match string) string {
+		return tokenMap.Mask("ssn", match, ClassAlwaysMask)
+	})
+	// Money patterns → money mask
+	text = moneyRegex.ReplaceAllStringFunc(text, func(match string) string {
+		return tokenMap.Mask("amount", match, ClassMaskMoney)
+	})
+	// Email patterns → name mask
+	text = emailRegex.ReplaceAllStringFunc(text, func(match string) string {
+		return tokenMap.Mask("email", match, ClassMaskName)
+	})
+	// Phone patterns → name mask
+	text = phoneRegex.ReplaceAllStringFunc(text, func(match string) string {
+		return tokenMap.Mask("phone", match, ClassMaskName)
+	})
+	return text
 }
 
 // maskValue recursively masks values in a JSON structure.

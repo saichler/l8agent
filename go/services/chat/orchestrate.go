@@ -95,6 +95,11 @@ func orchestrate(h *chatHandler, facade *l8agent.L8AgentChatConversation, vnic i
 	// Step 4: Build LLM context
 	allMsgs := append(historyMsgs, userChatMsg)
 	tokenMap := masking.NewTokenMap()
+
+	// Mask user prompt — replace obvious sensitive patterns (SSN, money, email, phone)
+	maskedUserMsg := h.maskingProxy.MaskText(userChatMsg.Message, tokenMap)
+	userChatMsg.Message = maskedUserMsg
+
 	systemPrompt := baseSystemPrompt + "\n\n" + h.schema.GetTier1Schema()
 	llmMessages := buildMessages(allMsgs)
 	toolDefs := tools.GetToolDefinitions()
@@ -230,7 +235,9 @@ func executeToolCalls(h *chatHandler, resp *llm.Response, tokenMap *masking.Toke
 		}
 
 		inputJSON, _ := json.Marshal(block.Input)
-		result, err := h.toolExec.Execute(block.Name, string(inputJSON), bearerToken)
+		// Unmask tokens in tool arguments — LLM may echo masked tokens in L8Queries or JSON data
+		unmaskedInput := tokenMap.Unmask(string(inputJSON))
+		result, err := h.toolExec.Execute(block.Name, unmaskedInput, bearerToken)
 
 		var toolResult llm.ToolResultContent
 		toolResult.Type = "tool_result"
