@@ -105,6 +105,48 @@ func SaveConversation(convo *l8agent.L8AgentConversation, isNew bool, vnic ifs.I
 	return resp.Error()
 }
 
+// ListConversations retrieves all conversations.
+func ListConversations(vnic ifs.IVNic) ([]*l8agent.L8AgentConversation, error) {
+	filter := &l8agent.L8AgentConversation{}
+	handler, ok := vnic.Resources().Services().ServiceHandler(ServiceName, serviceArea)
+	if !ok {
+		resp := vnic.Request("", ServiceName, serviceArea, ifs.GET, filter, 30)
+		if resp.Error() != nil {
+			return nil, resp.Error()
+		}
+		if resp.Element() != nil {
+			list, ok := resp.Element().(*l8agent.L8AgentConversationList)
+			if ok && list != nil {
+				return list.List, nil
+			}
+		}
+		return nil, nil
+	}
+	resp := handler.Get(object.New(nil, filter), vnic)
+	if resp.Error() != nil {
+		return nil, resp.Error()
+	}
+	if resp.Element() != nil {
+		list, ok := resp.Element().(*l8agent.L8AgentConversationList)
+		if ok && list != nil {
+			return list.List, nil
+		}
+	}
+	return nil, nil
+}
+
+// DeleteConversation removes a conversation by ID.
+func DeleteConversation(conversationId string, vnic ifs.IVNic) error {
+	filter := &l8agent.L8AgentConversation{ConversationId: conversationId}
+	handler, ok := vnic.Resources().Services().ServiceHandler(ServiceName, serviceArea)
+	if !ok {
+		resp := vnic.Request("", ServiceName, serviceArea, ifs.DELETE, filter, 30)
+		return resp.Error()
+	}
+	resp := handler.Delete(object.New(nil, filter), vnic)
+	return resp.Error()
+}
+
 func openDB(dbname, user, pass string) *sql.DB {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 		"127.0.0.1", 5432, user, pass, dbname)

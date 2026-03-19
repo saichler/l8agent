@@ -3,11 +3,11 @@ module github.com/saichler/l8agent/go
 go 1.26.1
 
 require (
-	github.com/lib/pq v1.11.2
+	github.com/lib/pq v1.12.0
 	github.com/saichler/l8orm v0.0.0-20260314140035-14439941c449
-	github.com/saichler/l8srlz v0.0.0-20251226163123-de32dc54dd4b
-	github.com/saichler/l8types v0.0.0-20260314185642-0c8622597dbd
-	github.com/saichler/l8utils v0.0.0-20260313172115-9e9a3c6234e3
+	github.com/saichler/l8srlz v0.0.0-20260316043740-03a0892b2173
+	github.com/saichler/l8types v0.0.0-20260317135407-26b0486254e4
+	github.com/saichler/l8utils v0.0.0-20260317111136-703d22bea6e3
 	google.golang.org/protobuf v1.36.11
 )
 

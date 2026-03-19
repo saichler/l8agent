@@ -18,6 +18,7 @@ import (
 	"github.com/saichler/l8agent/go/schema"
 	"github.com/saichler/l8agent/go/services/chat"
 	"github.com/saichler/l8agent/go/services/conversations"
+	"github.com/saichler/l8agent/go/services/messages"
 	"github.com/saichler/l8agent/go/services/prompts"
 	"github.com/saichler/l8agent/go/types/l8agent"
 	"github.com/saichler/l8types/go/ifs"
@@ -68,8 +69,11 @@ func Initialize(config AgentConfig, vnic ifs.IVNic) error {
 	// Create Tool Executor
 	toolExec := executor.NewToolExecutor(config.Prefix, config.Resources, schemaProvider, config.WebPort)
 
-	// Activate Conversation CRUD service
+	// Activate Conversation CRUD service (Service 1: metadata only)
 	conversations.Activate(config.DBCreds, config.DBName, config.ServiceArea, vnic)
+
+	// Activate Message CRUD service (Service 2: chat messages)
+	messages.Activate(config.DBCreds, config.DBName, config.ServiceArea, vnic)
 
 	// Activate Prompt CRUD service
 	prompts.Activate(config.DBCreds, config.DBName, config.ServiceArea, vnic)
@@ -94,9 +98,13 @@ func registerTypes(resources ifs.IResources) {
 	resources.Introspector().Decorators().AddPrimaryKeyDecorator(&l8agent.L8AgentPrompt{}, "PromptId")
 	resources.Registry().Register(&l8agent.L8AgentPromptList{})
 
-	// Register transient types for web service deserialization
-	resources.Registry().Register(&l8agent.L8AgentChatRequest{})
-	resources.Registry().Register(&l8agent.L8AgentChatResponse{})
+	// Register chat message type
+	resources.Introspector().Decorators().AddPrimaryKeyDecorator(&l8agent.L8AgentChatMessage{}, "ConversationId")
+	resources.Registry().Register(&l8agent.L8AgentChatMessageList{})
+
+	// Register chat conversation facade type for web service deserialization
+	resources.Registry().Register(&l8agent.L8AgentChatConversation{})
+	resources.Registry().Register(&l8agent.L8AgentChatConversationList{})
 }
 
 // seedDefaultPrompts creates built-in prompt templates if they don't already exist.
