@@ -10,6 +10,7 @@ package schema
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/saichler/l8types/go/ifs"
 	"github.com/saichler/l8types/go/types/l8reflect"
 )
@@ -55,29 +56,49 @@ func (p *Provider) DescribeModel(modelName string) string {
 	return buff.String()
 }
 
-// buildTier1 builds the compact Tier 1 schema from the introspector.
+// buildTier1 builds the compact Tier 1 schema from the service catalog and introspector.
+// Output includes service name, area, model name, and primary key for each service.
 func (p *Provider) buildTier1() string {
 	buff := bytes.Buffer{}
-	buff.WriteString("Available models and services:\n")
+	buff.WriteString("Available services and models:\n")
 
-	// Nodes(onlyLeafs, onlyRoots) - get all root nodes
-	nodes := p.resources.Introspector().Nodes(false, true)
-	for _, node := range nodes {
-		if node == nil {
-			continue
+	// Build from service catalog (has service name, area, model name)
+	services := p.resources.SysConfig().Services
+	if services != nil && services.ServiceToAreas != nil {
+		for svcName, svcAreas := range services.ServiceToAreas {
+			if svcAreas.Models == nil {
+				continue
+			}
+			for area, modelName := range svcAreas.Models {
+				if modelName == "" {
+					continue
+				}
+				buff.WriteString("- service: ")
+				buff.WriteString(svcName)
+				buff.WriteString(", area: ")
+				buff.WriteString(fmt.Sprintf("%d", area))
+				buff.WriteString(", model: ")
+				buff.WriteString(modelName)
+				pk := p.primaryKeyOfModel(modelName)
+				if pk != "" {
+					buff.WriteString(", pk: ")
+					buff.WriteString(pk)
+				}
+				buff.WriteString("\n")
+			}
 		}
-		buff.WriteString("- ")
-		buff.WriteString(node.TypeName)
-		pk := p.primaryKeyOf(node)
-		if pk != "" {
-			buff.WriteString(" (pk: ")
-			buff.WriteString(pk)
-			buff.WriteString(")")
-		}
-		buff.WriteString("\n")
 	}
 
 	return buff.String()
+}
+
+// primaryKeyOfModel extracts the primary key field name for a model by name.
+func (p *Provider) primaryKeyOfModel(modelName string) string {
+	node, ok := p.resources.Introspector().NodeByTypeName(modelName)
+	if !ok {
+		return ""
+	}
+	return p.primaryKeyOf(node)
 }
 
 // primaryKeyOf extracts the primary key field name for a node using decorators.
