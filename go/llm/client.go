@@ -13,7 +13,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"os"
 	"time"
 )
 
@@ -89,27 +88,15 @@ type ToolResultContent struct {
 	IsError   bool   `json:"is_error,omitempty"`
 }
 
-// NewClient creates a new LLM client.
-// API key is loaded from ANTHROPIC_API_KEY environment variable.
-// Model is loaded from ANTHROPIC_MODEL environment variable (default: claude-sonnet-4-6).
-func NewClient() (*Client, error) {
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		return nil, errors.New("ANTHROPIC_API_KEY environment variable is required")
-	}
-
-	model := os.Getenv("ANTHROPIC_MODEL")
-	if model == "" {
-		model = defaultModel
-	}
-
+// NewClient creates a new LLM client with the provided API key.
+func NewClient(apiKey string) *Client {
 	return &Client{
 		apiKey:    apiKey,
 		apiURL:    defaultAPIURL,
-		model:     model,
+		model:     defaultModel,
 		maxTokens: defaultMaxTokens,
 		client:    &http.Client{Timeout: requestTimeout},
-	}, nil
+	}
 }
 
 // SendMessage sends a message to the Claude API and returns the response.

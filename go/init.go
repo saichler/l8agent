@@ -10,7 +10,6 @@ package l8agent
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/saichler/l8agent/go/executor"
 	"github.com/saichler/l8agent/go/llm"
@@ -42,21 +41,15 @@ type AgentConfig struct {
 // Initialize activates all agent services (Chat, Conversations, Prompts).
 // Call this once from the consumer project's activation code.
 func Initialize(config AgentConfig, vnic ifs.IVNic) error {
-	// Check if agent is disabled
-	if os.Getenv("L8AGENT_ENABLED") == "false" {
-		fmt.Println("[agent] Agent is disabled via L8AGENT_ENABLED=false")
-		return nil
-	}
-
 	// Register types for introspection
 	registerTypes(config.Resources)
 
 	// Create LLM client
-	llmClient, err := llm.NewClient()
-	if err != nil {
-		fmt.Println("[agent] Warning: LLM client not available:", err)
-		fmt.Println("[agent] Chat service will return errors. Set ANTHROPIC_API_KEY to enable.")
-		// Continue activation — conversation and prompt CRUD still work
+	var llmClient *llm.Client
+	if config.AnthropicApiKey != "" {
+		llmClient = llm.NewClient(config.AnthropicApiKey)
+	} else {
+		fmt.Println("[agent] Warning: AnthropicApiKey is empty. Chat service will return errors.")
 	}
 
 	// Create Schema Provider
