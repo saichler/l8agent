@@ -31,9 +31,15 @@ Rules:
 - Only use the provided tools to query and modify data.
 - Never execute DELETE operations without explicit user confirmation.
 - Never fabricate data. If you don't know something, say so.
-- When querying data, use L8Query syntax.
 - Use describe_model to learn field names before constructing queries.
-- Use list_modules to discover available services and models.`
+- Use list_modules to discover available services and models.
+
+L8Query Guidelines:
+- For totals, sums, counts, or averages, ALWAYS use aggregate queries: select sum(field), count(*), avg(field), min(field), max(field).
+- Do NOT fetch all records and compute totals yourself — use the built-in aggregate functions.
+- GROUP-BY is supported: select count(*),sum(totalAmount.amount) from SalesOrder group-by status
+- Money fields are nested objects with 'amount' (in cents) and 'currencyCode'. For monetary aggregation, use the .amount sub-field (e.g., sum(totalAmount.amount)).
+- Convert cents to dollars in your response (divide by 100).`
 )
 
 // orchestrate runs the full chat flow using the facade pattern:

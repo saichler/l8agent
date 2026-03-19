@@ -6,6 +6,7 @@ Layer 8 Ecosystem is licensed under the Apache License, Version 2.0.
 package masking
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -46,10 +47,10 @@ func (m *TokenMap) Mask(fieldName string, value interface{}, classification stri
 		return m.createToken("MONEY", value)
 
 	case ClassNeverMask:
-		return fmt.Sprintf("%v", value)
+		return valueToString(value)
 
 	default:
-		return fmt.Sprintf("%v", value)
+		return valueToString(value)
 	}
 }
 
@@ -75,12 +76,26 @@ func (m *TokenMap) Unmask(text string) string {
 		if strings.Contains(result, token) {
 			replacements++
 		}
-		result = strings.ReplaceAll(result, token, fmt.Sprintf("%v", value))
+		result = strings.ReplaceAll(result, token, valueToString(value))
 	}
 	if replacements > 0 {
 		fmt.Println("[masking] Unmask: replaced", replacements, "tokens out of", len(m.tokens), "total")
 	}
 	return result
+}
+
+// valueToString converts a value to its string representation.
+// For complex types (maps, slices), uses JSON marshaling to produce valid JSON
+// instead of Go's fmt.Sprintf which produces map[key:value] format.
+func valueToString(value interface{}) string {
+	switch value.(type) {
+	case map[string]interface{}, []interface{}:
+		j, err := json.Marshal(value)
+		if err == nil {
+			return string(j)
+		}
+	}
+	return fmt.Sprintf("%v", value)
 }
 
 // Size returns the number of tokens in the map.

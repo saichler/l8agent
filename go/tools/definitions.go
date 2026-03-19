@@ -16,14 +16,29 @@ import (
 func GetToolDefinitions() []llm.Tool {
 	return []llm.Tool{
 		{
-			Name:        "l8query",
-			Description: "Execute an L8Query against a service endpoint. Supports SELECT, WHERE, SORT-BY, LIMIT, PAGE, GROUP-BY with aggregation functions (count, sum, avg, min, max). Use 'select *' for all fields or 'select field1,field2' for specific fields.",
+			Name: "l8query",
+			Description: `Execute an L8Query against a service endpoint.
+
+Syntax: select <columns|aggregates> from <Model> [where <conditions>] [group-by <fields>] [sort-by <field> [descending]] [limit <n>] [page <n>]
+
+Aggregate functions: count(*), sum(field), avg(field), min(field), max(field)
+- For totals/sums/averages, ALWAYS use aggregate queries instead of fetching all records.
+- Aggregate queries return result maps with auto-generated aliases (e.g., sumTotalAmount, countSalesOrderId).
+
+Examples:
+  select * from Employee where departmentId=D001 limit 10
+  select count(*) from Employee
+  select sum(totalAmount) from SalesOrder
+  select avg(salary) from Employee group-by departmentId
+  select count(*),sum(totalAmount) from SalesOrder where status=2
+
+Note: Money fields are nested objects with 'amount' (in cents) and 'currencyCode'. Use sum(totalAmount.amount) for monetary sums.`,
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"query": map[string]interface{}{
 						"type":        "string",
-						"description": "The L8Query string (e.g., 'select * from Employee where departmentId=D001 limit 10')",
+						"description": "The L8Query string. Use aggregate functions (sum, count, avg, min, max) for totals instead of fetching all records.",
 					},
 					"area": map[string]interface{}{
 						"type":        "integer",
