@@ -46,7 +46,11 @@ Rules:
 // 7. Return the assistant L8AgentChatMessage
 func orchestrate(h *chatHandler, facade *l8agent.L8AgentChatConversation, vnic ifs.IVNic) (*l8agent.L8AgentChatMessage, error) {
 	if h.llmClient == nil {
-		return nil, fmt.Errorf("LLM client not configured. Set ANTHROPIC_API_KEY environment variable")
+		if ifs.ANTHROPIC_API_KEY != "" {
+			h.llmClient = llm.NewClient(ifs.ANTHROPIC_API_KEY)
+		} else {
+			return nil, fmt.Errorf("LLM client not configured. Set ANTHROPIC_API_KEY environment variable")
+		}
 	}
 
 	// Extract the user message from the facade
