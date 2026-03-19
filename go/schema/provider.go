@@ -50,7 +50,13 @@ func (p *Provider) DescribeModel(modelName string) string {
 		buff.WriteString(name)
 		buff.WriteString(" (")
 		buff.WriteString(attr.TypeName)
-		buff.WriteString(")\n")
+		buff.WriteString(")")
+		if attr.TypeName == "*erp.Money" || attr.TypeName == "erp.Money" {
+			buff.WriteString(" — nested: .amount (int64, cents), .currencyCode (string). For aggregation use ")
+			buff.WriteString(name)
+			buff.WriteString(".amount")
+		}
+		buff.WriteString("\n")
 	}
 
 	return buff.String()
