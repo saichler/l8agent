@@ -29,17 +29,24 @@ type chatHandler struct {
 	sla          *ifs.ServiceLevelAgreement
 }
 
-func newChatHandler(llmClient *llm.Client, schemaProvider *schema.Provider, toolExec *executor.ToolExecutor, maskingProxy *masking.Proxy) *chatHandler {
-	return &chatHandler{
-		llmClient:    llmClient,
-		schema:       schemaProvider,
-		toolExec:     toolExec,
-		maskingProxy: maskingProxy,
-	}
-}
 
 func (h *chatHandler) Activate(sla *ifs.ServiceLevelAgreement, vnic ifs.IVNic) error {
 	h.sla = sla
+	args := sla.Args()
+	if len(args) >= 4 {
+		if v, ok := args[0].(*llm.Client); ok {
+			h.llmClient = v
+		}
+		if v, ok := args[1].(*schema.Provider); ok {
+			h.schema = v
+		}
+		if v, ok := args[2].(*executor.ToolExecutor); ok {
+			h.toolExec = v
+		}
+		if v, ok := args[3].(*masking.Proxy); ok {
+			h.maskingProxy = v
+		}
+	}
 	return nil
 }
 
