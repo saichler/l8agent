@@ -46,10 +46,10 @@ func Initialize(config AgentConfig, vnic ifs.IVNic) error {
 
 	// Create LLM client
 	var llmClient *llm.Client
-	if config.AnthropicApiKey != "" {
-		llmClient = llm.NewClient(config.AnthropicApiKey)
+	if ifs.ANTHROPIC_API_KEY != "" {
+		llmClient = llm.NewClient(ifs.ANTHROPIC_API_KEY)
 	} else {
-		fmt.Println("[agent] Warning: AnthropicApiKey is empty. Chat service will return errors.")
+		fmt.Println("[agent] Warning: ANTHROPIC_API_KEY is empty. Chat service will return errors.")
 	}
 
 	// Create Schema Provider
