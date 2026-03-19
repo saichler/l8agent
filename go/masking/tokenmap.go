@@ -69,9 +69,16 @@ func (m *TokenMap) Unmask(text string) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	replacements := 0
 	result := text
 	for token, value := range m.tokens {
+		if strings.Contains(result, token) {
+			replacements++
+		}
 		result = strings.ReplaceAll(result, token, fmt.Sprintf("%v", value))
+	}
+	if replacements > 0 {
+		fmt.Println("[masking] Unmask: replaced", replacements, "tokens out of", len(m.tokens), "total")
 	}
 	return result
 }

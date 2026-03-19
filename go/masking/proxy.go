@@ -7,6 +7,7 @@ package masking
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 )
 
@@ -23,16 +24,24 @@ func NewProxy(config *Config) *Proxy {
 // MaskJSON takes a JSON string (tool result) and returns a masked version.
 // The modelName is used for field classification.
 func (p *Proxy) MaskJSON(jsonStr string, modelName string, tokenMap *TokenMap) string {
+	fmt.Println("[masking] MaskJSON: model:", modelName, "input length:", len(jsonStr))
 	var data interface{}
 	if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
+		fmt.Println("[masking] MaskJSON: invalid JSON, returning original")
 		return jsonStr // Return original if not valid JSON
 	}
 
+	sizeBefore := tokenMap.Size()
 	masked := p.maskValue(data, modelName, tokenMap)
+	sizeAfter := tokenMap.Size()
 
 	result, err := json.Marshal(masked)
 	if err != nil {
+		fmt.Println("[masking] MaskJSON: marshal error:", err)
 		return jsonStr
+	}
+	if sizeAfter > sizeBefore {
+		fmt.Println("[masking] MaskJSON: created", sizeAfter-sizeBefore, "new tokens (total:", sizeAfter, ")")
 	}
 	return string(result)
 }
@@ -48,22 +57,31 @@ var (
 // MaskText masks obvious sensitive patterns in free-form text (user prompts).
 // Detects SSNs, money amounts, emails, and phone numbers using regex.
 func (p *Proxy) MaskText(text string, tokenMap *TokenMap) string {
+	sizeBefore := tokenMap.Size()
 	// SSN patterns → always mask
 	text = ssnRegex.ReplaceAllStringFunc(text, func(match string) string {
+		fmt.Println("[masking] MaskText: detected SSN pattern")
 		return tokenMap.Mask("ssn", match, ClassAlwaysMask)
 	})
 	// Money patterns → money mask
 	text = moneyRegex.ReplaceAllStringFunc(text, func(match string) string {
+		fmt.Println("[masking] MaskText: detected money pattern:", match)
 		return tokenMap.Mask("amount", match, ClassMaskMoney)
 	})
 	// Email patterns → name mask
 	text = emailRegex.ReplaceAllStringFunc(text, func(match string) string {
+		fmt.Println("[masking] MaskText: detected email pattern")
 		return tokenMap.Mask("email", match, ClassMaskName)
 	})
 	// Phone patterns → name mask
 	text = phoneRegex.ReplaceAllStringFunc(text, func(match string) string {
+		fmt.Println("[masking] MaskText: detected phone pattern")
 		return tokenMap.Mask("phone", match, ClassMaskName)
 	})
+	sizeAfter := tokenMap.Size()
+	if sizeAfter > sizeBefore {
+		fmt.Println("[masking] MaskText: created", sizeAfter-sizeBefore, "new tokens (total:", sizeAfter, ")")
+	}
 	return text
 }
 

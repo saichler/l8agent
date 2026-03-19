@@ -98,9 +98,14 @@ func orchestrate(h *chatHandler, facade *l8agent.L8AgentChatConversation, vnic i
 
 	// Mask user prompt — replace obvious sensitive patterns (SSN, money, email, phone)
 	maskedUserMsg := h.maskingProxy.MaskText(userChatMsg.Message, tokenMap)
+	if maskedUserMsg != userChatMsg.Message {
+		fmt.Println("[agent] masking: user prompt masked, tokens created:", tokenMap.Size())
+		fmt.Println("[agent] masking: masked prompt:", maskedUserMsg)
+	}
 	userChatMsg.Message = maskedUserMsg
 
 	systemPrompt := baseSystemPrompt + "\n\n" + h.schema.GetTier1Schema()
+	fmt.Println("[agent] orchestrate: system prompt length:", len(systemPrompt))
 	llmMessages := buildMessages(allMsgs)
 	toolDefs := tools.GetToolDefinitions()
 
@@ -114,6 +119,7 @@ func orchestrate(h *chatHandler, facade *l8agent.L8AgentChatConversation, vnic i
 	fmt.Println("[agent] orchestrate: LLM response length:", len(response), "toolCalls:", toolCallCount, "tokens:", totalTokens)
 
 	// Step 6: Unmask the response
+	fmt.Println("[agent] masking: unmasking final response, token map size:", tokenMap.Size())
 	response = tokenMap.Unmask(response)
 
 	// Step 7: Save assistant message
@@ -235,8 +241,13 @@ func executeToolCalls(h *chatHandler, resp *llm.Response, tokenMap *masking.Toke
 		}
 
 		inputJSON, _ := json.Marshal(block.Input)
+		rawInput := string(inputJSON)
 		// Unmask tokens in tool arguments — LLM may echo masked tokens in L8Queries or JSON data
-		unmaskedInput := tokenMap.Unmask(string(inputJSON))
+		unmaskedInput := tokenMap.Unmask(rawInput)
+		if unmaskedInput != rawInput {
+			fmt.Println("[agent] masking: unmasked tool input for", block.Name, "- tokens replaced")
+		}
+		fmt.Println("[agent] executor: calling tool:", block.Name, "input length:", len(unmaskedInput))
 		result, err := h.toolExec.Execute(block.Name, unmaskedInput, bearerToken)
 
 		var toolResult llm.ToolResultContent
@@ -244,10 +255,15 @@ func executeToolCalls(h *chatHandler, resp *llm.Response, tokenMap *masking.Toke
 		toolResult.ToolUseID = block.ID
 
 		if err != nil {
+			fmt.Println("[agent] executor: tool", block.Name, "error:", err)
 			toolResult.Content = "Error: " + err.Error()
 			toolResult.IsError = true
 		} else {
+			fmt.Println("[agent] executor: tool", block.Name, "result length:", len(result))
 			masked := h.maskingProxy.MaskJSON(result, block.Name, tokenMap)
+			if masked != result {
+				fmt.Println("[agent] masking: masked tool result for", block.Name, "- token map size:", tokenMap.Size())
+			}
 			toolResult.Content = masked
 		}
 
