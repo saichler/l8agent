@@ -144,7 +144,11 @@ Layer 8 Ecosystem is licensed under the Apache License, Version 2.0.
 
             var body = document.createElement('div');
             body.className = 'l8agent-m-msg-body';
-            body.textContent = content;
+            if (role === 'assistant' && typeof Layer8Markdown !== 'undefined') {
+                Layer8Markdown.renderInto(body, content);
+            } else {
+                body.textContent = content;
+            }
 
             div.appendChild(label);
             div.appendChild(body);
