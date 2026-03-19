@@ -45,22 +45,29 @@ Rules:
 // 6. Update conversation metadata (Service 1)
 // 7. Return the assistant L8AgentChatMessage
 func orchestrate(h *chatHandler, facade *l8agent.L8AgentChatConversation, vnic ifs.IVNic) (*l8agent.L8AgentChatMessage, error) {
+	fmt.Println("[agent] orchestrate: start")
 	if h.llmClient == nil {
+		fmt.Println("[agent] orchestrate: llmClient is nil, checking ANTHROPIC_API_KEY")
 		if ifs.ANTHROPIC_API_KEY != "" {
+			fmt.Println("[agent] orchestrate: creating llmClient from env key")
 			h.llmClient = llm.NewClient(ifs.ANTHROPIC_API_KEY)
 		} else {
+			fmt.Println("[agent] orchestrate: no API key available")
 			return nil, fmt.Errorf("LLM client not configured. Set ANTHROPIC_API_KEY environment variable")
 		}
 	}
 
 	// Extract the user message from the facade
 	userMsg := facade.Messages[len(facade.Messages)-1]
+	fmt.Println("[agent] orchestrate: user message:", userMsg.Message)
 
 	// Step 1: Load or create conversation metadata
 	convo, isNew, err := loadOrCreateConversation(facade, userMsg.Message, vnic)
 	if err != nil {
+		fmt.Println("[agent] orchestrate: conversation error:", err)
 		return nil, fmt.Errorf("conversation error: %w", err)
 	}
+	fmt.Println("[agent] orchestrate: conversation:", convo.ConversationId, "isNew:", isNew)
 
 	// Step 2: Load existing messages from Service 2
 	var historyMsgs []*l8agent.L8AgentChatMessage
@@ -93,10 +100,13 @@ func orchestrate(h *chatHandler, facade *l8agent.L8AgentChatConversation, vnic i
 	toolDefs := tools.GetToolDefinitions()
 
 	// Step 5: Call LLM with tool loop
+	fmt.Println("[agent] orchestrate: calling LLM, messages:", len(llmMessages), "tools:", len(toolDefs))
 	response, toolCallCount, totalTokens, err := toolLoop(h, systemPrompt, llmMessages, toolDefs, tokenMap, vnic)
 	if err != nil {
+		fmt.Println("[agent] orchestrate: LLM error:", err)
 		return nil, fmt.Errorf("LLM error: %w", err)
 	}
+	fmt.Println("[agent] orchestrate: LLM response length:", len(response), "toolCalls:", toolCallCount, "tokens:", totalTokens)
 
 	// Step 6: Unmask the response
 	response = tokenMap.Unmask(response)
@@ -173,21 +183,26 @@ func toolLoop(h *chatHandler, systemPrompt string, msgs []llm.Message, toolDefs 
 	totalTokens := 0
 
 	for i := 0; i < maxToolCalls; i++ {
+		fmt.Println("[agent] toolLoop: iteration", i, "sending to LLM")
 		resp, err := h.llmClient.SendMessage(systemPrompt, msgs, toolDefs)
 		if err != nil {
+			fmt.Println("[agent] toolLoop: LLM error:", err)
 			return "", toolCallCount, totalTokens, err
 		}
 
 		totalTokens += resp.Usage.InputTokens + resp.Usage.OutputTokens
+		fmt.Println("[agent] toolLoop: stopReason:", resp.StopReason, "content blocks:", len(resp.Content))
 
 		if resp.StopReason == "end_turn" {
 			text := extractText(resp)
+			fmt.Println("[agent] toolLoop: end_turn, text length:", len(text))
 			return text, toolCallCount, totalTokens, nil
 		}
 
 		if resp.StopReason == "tool_use" {
 			toolResults := executeToolCalls(h, resp, tokenMap, vnic)
 			toolCallCount += len(toolResults)
+			fmt.Println("[agent] toolLoop: tool_use, executed", len(toolResults), "tools")
 
 			assistantContent := marshalJSON(resp.Content)
 			msgs = append(msgs, llm.Message{Role: "assistant", Content: assistantContent})
