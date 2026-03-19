@@ -38,12 +38,34 @@ type AgentConfig struct {
 	DefaultPrompts   []*l8agent.L8AgentPrompt // Optional: built-in prompt templates
 }
 
-// Initialize activates all agent services (Chat, Conversations, Prompts).
-// Call this once from the consumer project's activation code.
+// Initialize activates ORM agent services (Conversations, Messages, Prompts).
+// Call this during parallel service activation. Chat service is NOT activated here
+// because it needs the introspector to be fully populated first.
 func Initialize(config AgentConfig, vnic ifs.IVNic) error {
 	// Register types for introspection
 	registerTypes(config.Resources)
 
+	// Activate Conversation CRUD service (Service 1: metadata only)
+	conversations.Activate(config.DBCreds, config.DBName, config.ServiceArea, vnic)
+
+	// Activate Message CRUD service (Service 2: chat messages)
+	messages.Activate(config.DBCreds, config.DBName, config.ServiceArea, vnic)
+
+	// Activate Prompt CRUD service
+	prompts.Activate(config.DBCreds, config.DBName, config.ServiceArea, vnic)
+
+	// Seed default prompts if provided
+	if len(config.DefaultPrompts) > 0 {
+		seedDefaultPrompts(config.DefaultPrompts, config.ServiceArea, vnic)
+	}
+
+	fmt.Printf("[agent] AI Agent ORM services initialized (area=%d)\n", config.ServiceArea)
+	return nil
+}
+
+// InitializeChat activates the Chat orchestration service.
+// Call this AFTER all other services are activated so the introspector is fully populated.
+func InitializeChat(config AgentConfig, vnic ifs.IVNic) error {
 	// Create LLM client
 	var llmClient *llm.Client
 	if ifs.ANTHROPIC_API_KEY != "" {
@@ -62,24 +84,10 @@ func Initialize(config AgentConfig, vnic ifs.IVNic) error {
 	// Create Tool Executor
 	toolExec := executor.NewToolExecutor(config.Prefix, config.Resources, schemaProvider, config.WebPort)
 
-	// Activate Conversation CRUD service (Service 1: metadata only)
-	conversations.Activate(config.DBCreds, config.DBName, config.ServiceArea, vnic)
-
-	// Activate Message CRUD service (Service 2: chat messages)
-	messages.Activate(config.DBCreds, config.DBName, config.ServiceArea, vnic)
-
-	// Activate Prompt CRUD service
-	prompts.Activate(config.DBCreds, config.DBName, config.ServiceArea, vnic)
-
 	// Activate Chat orchestration service
 	chat.Activate(config.ServiceArea, vnic, llmClient, schemaProvider, toolExec, maskingProxy)
 
-	// Seed default prompts if provided
-	if len(config.DefaultPrompts) > 0 {
-		seedDefaultPrompts(config.DefaultPrompts, config.ServiceArea, vnic)
-	}
-
-	fmt.Printf("[agent] AI Agent initialized (area=%d, prefix=%s)\n", config.ServiceArea, config.Prefix)
+	fmt.Printf("[agent] AI Agent Chat service initialized (area=%d, prefix=%s)\n", config.ServiceArea, config.Prefix)
 	return nil
 }
 
