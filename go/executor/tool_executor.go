@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/saichler/l8agent/go/schema"
 	"github.com/saichler/l8types/go/ifs"
@@ -64,7 +65,24 @@ func (t *ToolExecutor) Execute(toolName string, input string, bearerToken string
 	}
 }
 
+// aggregateKeywords are the L8Query aggregate function prefixes.
+var aggregateKeywords = []string{"sum(", "count(", "avg(", "min(", "max("}
+
+// hasAggregate checks if an L8Query uses aggregate functions.
+func hasAggregate(query string) bool {
+	lower := strings.ToLower(query)
+	for _, kw := range aggregateKeywords {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+	return false
+}
+
 // executeQuery sends an L8Query GET request to a service via the vnic.
+// It enforces the use of aggregate functions for queries that fetch all records
+// without a specific ID filter — the LLM must use sum/count/avg/min/max instead
+// of fetching raw data and computing totals itself.
 func (t *ToolExecutor) executeQuery(input map[string]interface{}) (string, error) {
 	query, _ := input["query"].(string)
 	area, _ := input["area"].(float64)
@@ -72,6 +90,15 @@ func (t *ToolExecutor) executeQuery(input map[string]interface{}) (string, error
 
 	if query == "" || service == "" {
 		return "", errors.New("l8query requires 'query', 'area', and 'service'")
+	}
+
+	// Enforce aggregate usage: reject select * without a specific ID filter.
+	// The LLM must use sum(), count(), avg(), etc. for totals and summaries.
+	if !hasAggregate(query) {
+		lower := strings.ToLower(query)
+		if strings.Contains(lower, "select *") && !strings.Contains(lower, "id=") {
+			return "", fmt.Errorf("rejected: use aggregate functions (sum, count, avg, min, max) instead of 'select *' for summaries. Example: select sum(totalAmount.amount) from SalesOrder")
+		}
 	}
 
 	elems := t.vnic.LeaderRequest(service, byte(area), ifs.GET, query, requestTimeout)
