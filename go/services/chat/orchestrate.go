@@ -247,7 +247,7 @@ func executeToolCalls(h *chatHandler, resp *llm.Response, tokenMap *masking.Toke
 		if unmaskedInput != rawInput {
 			fmt.Println("[agent] masking: unmasked tool input for", block.Name, "- tokens replaced")
 		}
-		fmt.Println("[agent] executor: calling tool:", block.Name, "input length:", len(unmaskedInput))
+		fmt.Println("[agent] executor: calling tool:", block.Name, "input:", unmaskedInput)
 		result, err := h.toolExec.Execute(block.Name, unmaskedInput, bearerToken)
 
 		var toolResult llm.ToolResultContent
