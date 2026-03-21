@@ -67,11 +67,14 @@ func Initialize(config AgentConfig, vnic ifs.IVNic) error {
 func InitializeChat(config AgentConfig, vnic ifs.IVNic) error {
 	// Create LLM client from security credentials
 	var llmClient *llm.Client
-	_, _, apiKey, _, err := vnic.Resources().Security().Credential(config.LLMCreds, "API_KEY", vnic.Resources())
+	fmt.Printf("[agent] Retrieving LLM credentials: LLMCreds=%q, entry=%q\n", config.LLMCreds, "API_KEY")
+	v1, v2, apiKey, v4, err := vnic.Resources().Security().Credential(config.LLMCreds, "API_KEY", vnic.Resources())
+	fmt.Printf("[agent] Credential result: v1=%q, v2=%q, apiKey_len=%d, v4=%q, err=%v\n", v1, v2, len(apiKey), v4, err)
 	if err != nil {
 		fmt.Println("[agent] Warning: failed to retrieve LLM credentials:", err)
 	} else if apiKey != "" {
 		llmClient = llm.NewClient(apiKey)
+		fmt.Println("[agent] LLM client created successfully")
 	} else {
 		fmt.Println("[agent] Warning: LLM API key is empty. Chat service will return errors.")
 	}
