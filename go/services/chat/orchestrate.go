@@ -53,14 +53,8 @@ L8Query Guidelines:
 func orchestrate(h *chatHandler, facade *l8agent.L8AgentChatConversation, vnic ifs.IVNic) (*l8agent.L8AgentChatMessage, error) {
 	fmt.Println("[agent] orchestrate: start")
 	if h.llmClient == nil {
-		fmt.Println("[agent] orchestrate: llmClient is nil, checking ANTHROPIC_API_KEY")
-		if ifs.ANTHROPIC_API_KEY != "" {
-			fmt.Println("[agent] orchestrate: creating llmClient from env key")
-			h.llmClient = llm.NewClient(ifs.ANTHROPIC_API_KEY)
-		} else {
-			fmt.Println("[agent] orchestrate: no API key available")
-			return nil, fmt.Errorf("LLM client not configured. Set ANTHROPIC_API_KEY environment variable")
-		}
+		fmt.Println("[agent] orchestrate: llmClient is nil, no API key configured")
+		return nil, fmt.Errorf("LLM client not configured. Check LLM credentials in the security provider")
 	}
 
 	// Extract the user message from the facade

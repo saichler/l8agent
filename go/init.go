@@ -32,6 +32,7 @@ type AgentConfig struct {
 	ServiceArea      byte                // Service area for agent services
 	DBCreds          string              // Database credential key
 	DBName           string              // Database name
+	LLMCreds         string              // LLM credential key (e.g., "Anthropic")
 	MaskingOverrides MaskingOverrides    // Optional: project-specific field overrides
 	DefaultPrompts   []*l8agent.L8AgentPrompt // Optional: built-in prompt templates
 }
@@ -64,12 +65,15 @@ func Initialize(config AgentConfig, vnic ifs.IVNic) error {
 // InitializeChat activates the Chat orchestration service.
 // Call this AFTER all other services are activated so the introspector is fully populated.
 func InitializeChat(config AgentConfig, vnic ifs.IVNic) error {
-	// Create LLM client
+	// Create LLM client from security credentials
 	var llmClient *llm.Client
-	if ifs.ANTHROPIC_API_KEY != "" {
-		llmClient = llm.NewClient(ifs.ANTHROPIC_API_KEY)
+	_, _, apiKey, _, err := vnic.Resources().Security().Credential(config.LLMCreds, "API_KEY", vnic.Resources())
+	if err != nil {
+		fmt.Println("[agent] Warning: failed to retrieve LLM credentials:", err)
+	} else if apiKey != "" {
+		llmClient = llm.NewClient(apiKey)
 	} else {
-		fmt.Println("[agent] Warning: ANTHROPIC_API_KEY is empty. Chat service will return errors.")
+		fmt.Println("[agent] Warning: LLM API key is empty. Chat service will return errors.")
 	}
 
 	// Create Schema Provider
