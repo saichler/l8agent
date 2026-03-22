@@ -201,6 +201,15 @@ func (t *ToolExecutor) unmarshalToProto(modelName string, data map[string]interf
 // marshalResponse serializes the response elements to JSON.
 func (t *ToolExecutor) marshalResponse(elems ifs.IElements) (string, error) {
 	if elems.Element() == nil {
+		// Check for aggregate results in metadata
+		md := elems.Metadata()
+		if md != nil && md.KeyCount != nil && len(md.KeyCount.Counts) > 0 {
+			j, e := json.Marshal(md.KeyCount.Counts)
+			if e != nil {
+				return "", e
+			}
+			return string(j), nil
+		}
 		return "{}", nil
 	}
 
