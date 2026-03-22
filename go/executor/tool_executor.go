@@ -204,11 +204,7 @@ func (t *ToolExecutor) marshalResponse(elems ifs.IElements) (string, error) {
 		// Check for aggregate results in metadata
 		md := elems.Metadata()
 		if md != nil && md.KeyCount != nil && len(md.KeyCount.Counts) > 0 {
-			j, e := json.Marshal(md.KeyCount.Counts)
-			if e != nil {
-				return "", e
-			}
-			return string(j), nil
+			return formatAggregateCounts(md.KeyCount.Counts), nil
 		}
 		return "{}", nil
 	}
@@ -237,6 +233,15 @@ func (t *ToolExecutor) marshalResponse(elems ifs.IElements) (string, error) {
 	}
 
 	return "{}", nil
+}
+
+// formatAggregateCounts formats aggregate results as JSON without scientific notation.
+func formatAggregateCounts(counts map[string]float64) string {
+	parts := make([]string, 0, len(counts))
+	for k, v := range counts {
+		parts = append(parts, fmt.Sprintf("%q:%.2f", k, v))
+	}
+	return "{" + strings.Join(parts, ",") + "}"
 }
 
 // actionName returns a human-readable name for an action.
