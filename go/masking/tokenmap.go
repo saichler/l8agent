@@ -76,12 +76,58 @@ func (m *TokenMap) Unmask(text string) string {
 		if strings.Contains(result, token) {
 			replacements++
 		}
-		result = strings.ReplaceAll(result, token, valueToString(value))
+		var display string
+		if strings.HasPrefix(token, "[MONEY_") {
+			display = formatMoney(value)
+		} else {
+			display = valueToString(value)
+		}
+		result = strings.ReplaceAll(result, token, display)
 	}
 	if replacements > 0 {
 		fmt.Println("[masking] Unmask: replaced", replacements, "tokens out of", len(m.tokens), "total")
 	}
 	return result
+}
+
+// formatMoney formats a numeric value as a dollar amount with commas (e.g., "$60,011,642.00").
+// TODO: support currency codes from the actual data instead of hardcoding "$".
+func formatMoney(value interface{}) string {
+	var cents float64
+	switch v := value.(type) {
+	case float64:
+		cents = v
+	case float32:
+		cents = float64(v)
+	case int64:
+		cents = float64(v)
+	case int:
+		cents = float64(v)
+	default:
+		return fmt.Sprintf("%v", value)
+	}
+	dollars := cents / 100.0
+	negative := dollars < 0
+	if negative {
+		dollars = -dollars
+	}
+	// Format with 2 decimal places then insert commas
+	raw := fmt.Sprintf("%.2f", dollars)
+	parts := strings.SplitN(raw, ".", 2)
+	intPart := parts[0]
+	// Insert commas from right to left
+	n := len(intPart)
+	var buf strings.Builder
+	for i, ch := range intPart {
+		if i > 0 && (n-i)%3 == 0 {
+			buf.WriteByte(',')
+		}
+		buf.WriteRune(ch)
+	}
+	if negative {
+		return "-$" + buf.String() + "." + parts[1]
+	}
+	return "$" + buf.String() + "." + parts[1]
 }
 
 // valueToString converts a value to its string representation.
