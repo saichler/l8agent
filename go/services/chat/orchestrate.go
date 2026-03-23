@@ -39,7 +39,7 @@ L8Query Guidelines:
 - Do NOT fetch all records and compute totals yourself — use the built-in aggregate functions.
 - GROUP-BY is supported: select count(*),sum(totalAmount.amount) from SalesOrder group-by status
 - Money fields are nested objects with 'amount' (in cents) and 'currencyCode'. For monetary aggregation, use the .amount sub-field (e.g., sum(totalAmount.amount)).
-- Convert cents to dollars in your response (divide by 100).`
+- Convert cents to dollars in your response (divide by 100). Always format monetary amounts with commas and exactly two decimal places (e.g., $60,011,642.00). Never use scientific notation.`
 )
 
 // orchestrate runs the full chat flow using the facade pattern:
