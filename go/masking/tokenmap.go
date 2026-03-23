@@ -93,26 +93,25 @@ func (m *TokenMap) Unmask(text string) string {
 // formatMoney formats a numeric value as a dollar amount with commas (e.g., "$60,011,642.00").
 // TODO: support currency codes from the actual data instead of hardcoding "$".
 func formatMoney(value interface{}) string {
-	var cents float64
+	var num float64
 	switch v := value.(type) {
 	case float64:
-		cents = v
+		num = v
 	case float32:
-		cents = float64(v)
+		num = float64(v)
 	case int64:
-		cents = float64(v)
+		num = float64(v)
 	case int:
-		cents = float64(v)
+		num = float64(v)
 	default:
 		return fmt.Sprintf("%v", value)
 	}
-	dollars := cents / 100.0
-	negative := dollars < 0
+	negative := num < 0
 	if negative {
-		dollars = -dollars
+		num = -num
 	}
 	// Format with 2 decimal places then insert commas
-	raw := fmt.Sprintf("%.2f", dollars)
+	raw := fmt.Sprintf("%.2f", num)
 	parts := strings.SplitN(raw, ".", 2)
 	intPart := parts[0]
 	// Insert commas from right to left
