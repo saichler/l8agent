@@ -88,12 +88,17 @@ func (m *TokenMap) Unmask(text string) string {
 // For complex types (maps, slices), uses JSON marshaling to produce valid JSON
 // instead of Go's fmt.Sprintf which produces map[key:value] format.
 func valueToString(value interface{}) string {
-	switch value.(type) {
+	switch v := value.(type) {
 	case map[string]interface{}, []interface{}:
 		j, err := json.Marshal(value)
 		if err == nil {
 			return string(j)
 		}
+	case float64:
+		// Use fixed-point notation to avoid scientific notation (e.g., 6.0011642e+07)
+		return fmt.Sprintf("%.2f", v)
+	case float32:
+		return fmt.Sprintf("%.2f", v)
 	}
 	return fmt.Sprintf("%v", value)
 }
