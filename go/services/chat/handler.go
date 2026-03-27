@@ -33,33 +33,19 @@ type chatHandler struct {
 func (h *chatHandler) Activate(sla *ifs.ServiceLevelAgreement, vnic ifs.IVNic) error {
 	h.sla = sla
 	args := sla.Args()
-	fmt.Println("[agent] Activate called, args count:", len(args))
 	if len(args) >= 4 {
 		if v, ok := args[0].(*llm.Client); ok {
 			h.llmClient = v
-			fmt.Println("[agent] llmClient set:", v != nil)
 		}
 		if v, ok := args[1].(*schema.Provider); ok {
 			h.schema = v
-			fmt.Println("[agent] schema set:", v != nil)
 		}
 		if v, ok := args[2].(*executor.ToolExecutor); ok {
 			h.toolExec = v
-			fmt.Println("[agent] toolExec set:", v != nil)
 		}
 		if v, ok := args[3].(*masking.Proxy); ok {
 			h.maskingProxy = v
-			fmt.Println("[agent] maskingProxy set:", v != nil)
 		}
-	} else {
-		fmt.Println("[agent] WARNING: not enough args in SLA, handler fields will be nil")
-	}
-
-	// Print all models in the introspector
-	nodes := vnic.Resources().Introspector().Nodes(false, true)
-	fmt.Println("[agent] Introspector models (", len(nodes), "):")
-	for _, node := range nodes {
-		fmt.Println("[agent]   -", node.TypeName)
 	}
 
 	return nil
@@ -73,35 +59,22 @@ func (h *chatHandler) DeActivate() error {
 // conversation metadata plus a Messages slice with the latest user message.
 // Returns the assistant's L8AgentChatMessage.
 func (h *chatHandler) Post(elem ifs.IElements, vnic ifs.IVNic) ifs.IElements {
-	fmt.Println("[agent] Post called, llmClient:", h.llmClient != nil, "schema:", h.schema != nil, "toolExec:", h.toolExec != nil, "maskingProxy:", h.maskingProxy != nil)
 	if elem.Element() == nil {
-		fmt.Println("[agent] Post: no request body")
 		return object.New(errMsg("no request body"), nil)
 	}
 
 	facade, ok := elem.Element().(*l8agent.L8AgentChatConversation)
 	if !ok {
-		fmt.Println("[agent] Post: invalid type, got:", fmt.Sprintf("%T", elem.Element()))
-		return object.New(errMsg("invalid L8AgentChatConversation type"), nil)
+		return object.New(errMsg(fmt.Sprintf("invalid type, got: %T", elem.Element())), nil)
 	}
 
-	fmt.Println("[agent] Post: conversationId:", facade.ConversationId, "messages:", len(facade.Messages))
 	if len(facade.Messages) == 0 || facade.Messages[len(facade.Messages)-1].Message == "" {
-		fmt.Println("[agent] Post: message is required")
 		return object.New(errMsg("message is required"), nil)
 	}
 
-	fmt.Println("[agent] Post: calling orchestrate with message:", facade.Messages[len(facade.Messages)-1].Message)
 	resp, err := orchestrate(h, facade, vnic)
 	if err != nil {
-		fmt.Println("[agent] Post: orchestrate error:", err)
 		return object.New(err, nil)
-	}
-
-	if resp == nil {
-		fmt.Println("[agent] Post: orchestrate returned nil response")
-	} else {
-		fmt.Println("[agent] Post: orchestrate success, response length:", len(resp.Message))
 	}
 
 	return object.New(nil, resp)
@@ -131,9 +104,7 @@ func (h *chatHandler) Delete(elem ifs.IElements, vnic ifs.IVNic) ifs.IElements {
 	}
 
 	// Delete messages first, then conversation
-	if err := messages.DeleteMessages(facade.ConversationId, vnic); err != nil {
-		fmt.Println("[agent] warning: failed to delete messages:", err)
-	}
+	messages.DeleteMessages(facade.ConversationId, vnic)
 	if err := conversations.DeleteConversation(facade.ConversationId, vnic); err != nil {
 		return object.New(err, nil)
 	}
@@ -154,7 +125,6 @@ func (h *chatHandler) Get(elem ifs.IElements, vnic ifs.IVNic) ifs.IElements {
 	for _, convo := range convoList {
 		msgs, err := messages.GetMessages(convo.ConversationId, vnic)
 		if err != nil {
-			fmt.Println("[agent] warning: failed to load messages for", convo.ConversationId, ":", err)
 			msgs = nil
 		}
 		facade := &l8agent.L8AgentChatConversation{

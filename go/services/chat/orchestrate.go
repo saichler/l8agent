@@ -52,30 +52,25 @@ L8Query Guidelines:
 // 6. Update conversation metadata (Service 1)
 // 7. Return the assistant L8AgentChatMessage
 func orchestrate(h *chatHandler, facade *l8agent.L8AgentChatConversation, vnic ifs.IVNic) (*l8agent.L8AgentChatMessage, error) {
-	fmt.Println("[agent] orchestrate: start")
 	if h.llmClient == nil {
-		fmt.Println("[agent] orchestrate: llmClient is nil, no API key configured")
 		return nil, fmt.Errorf("LLM client not configured. Check LLM credentials in the security provider")
 	}
 
 	// Extract the user message from the facade
 	userMsg := facade.Messages[len(facade.Messages)-1]
-	fmt.Println("[agent] orchestrate: user message:", userMsg.Message)
 
 	// Step 1: Load or create conversation metadata
 	convo, isNew, err := loadOrCreateConversation(facade, userMsg.Message, vnic)
 	if err != nil {
-		fmt.Println("[agent] orchestrate: conversation error:", err)
 		return nil, fmt.Errorf("conversation error: %w", err)
 	}
-	fmt.Println("[agent] orchestrate: conversation:", convo.ConversationId, "isNew:", isNew)
 
 	// Step 2: Load existing messages from Service 2
 	var historyMsgs []*l8agent.L8AgentChatMessage
 	if !isNew {
 		historyMsgs, err = messages.GetMessages(convo.ConversationId, vnic)
 		if err != nil {
-			fmt.Println("[agent] warning: failed to load messages:", err)
+			historyMsgs = nil
 		}
 	}
 
@@ -89,9 +84,7 @@ func orchestrate(h *chatHandler, facade *l8agent.L8AgentChatConversation, vnic i
 		AllowedModules: userMsg.AllowedModules,
 		Timestamp:      time.Now().Unix(),
 	}
-	if err := messages.SaveMessage(userChatMsg, vnic); err != nil {
-		fmt.Println("[agent] warning: failed to save user message:", err)
-	}
+	messages.SaveMessage(userChatMsg, vnic)
 
 	// Step 4: Build LLM context
 	allMsgs := append(historyMsgs, userChatMsg)
@@ -99,28 +92,19 @@ func orchestrate(h *chatHandler, facade *l8agent.L8AgentChatConversation, vnic i
 
 	// Mask user prompt — replace obvious sensitive patterns (SSN, money, email, phone)
 	maskedUserMsg := h.maskingProxy.MaskText(userChatMsg.Message, tokenMap)
-	if maskedUserMsg != userChatMsg.Message {
-		fmt.Println("[agent] masking: user prompt masked, tokens created:", tokenMap.Size())
-		fmt.Println("[agent] masking: masked prompt:", maskedUserMsg)
-	}
 	userChatMsg.Message = maskedUserMsg
 
 	systemPrompt := baseSystemPrompt + "\n\n" + h.schema.GetTier1Schema()
-	fmt.Println("[agent] orchestrate: system prompt length:", len(systemPrompt))
 	llmMessages := buildMessages(allMsgs)
 	toolDefs := tools.GetToolDefinitions()
 
 	// Step 5: Call LLM with tool loop
-	fmt.Println("[agent] orchestrate: calling LLM, messages:", len(llmMessages), "tools:", len(toolDefs))
 	response, toolCallCount, totalTokens, err := toolLoop(h, systemPrompt, llmMessages, toolDefs, tokenMap, vnic)
 	if err != nil {
-		fmt.Println("[agent] orchestrate: LLM error:", err)
 		return nil, fmt.Errorf("LLM error: %w", err)
 	}
-	fmt.Println("[agent] orchestrate: LLM response length:", len(response), "toolCalls:", toolCallCount, "tokens:", totalTokens)
 
 	// Step 6: Unmask the response
-	fmt.Println("[agent] masking: unmasking final response, token map size:", tokenMap.Size())
 	response = tokenMap.Unmask(response)
 
 	// Step 7: Save assistant message
@@ -132,15 +116,11 @@ func orchestrate(h *chatHandler, facade *l8agent.L8AgentChatConversation, vnic i
 		Timestamp:      time.Now().Unix(),
 		TokenCount:     int32(totalTokens),
 	}
-	if err := messages.SaveMessage(assistantMsg, vnic); err != nil {
-		fmt.Println("[agent] warning: failed to save assistant message:", err)
-	}
+	messages.SaveMessage(assistantMsg, vnic)
 
 	// Step 8: Update conversation metadata
 	convo.UpdatedAt = time.Now().Unix()
-	if err := conversations.SaveConversation(convo, isNew, vnic); err != nil {
-		fmt.Println("[agent] warning: failed to save conversation:", err)
-	}
+	conversations.SaveConversation(convo, isNew, vnic)
 
 	_ = toolCallCount
 	return assistantMsg, nil
@@ -195,26 +175,21 @@ func toolLoop(h *chatHandler, systemPrompt string, msgs []llm.Message, toolDefs 
 	totalTokens := 0
 
 	for i := 0; i < maxToolCalls; i++ {
-		fmt.Println("[agent] toolLoop: iteration", i, "sending to LLM")
 		resp, err := h.llmClient.SendMessage(systemPrompt, msgs, toolDefs)
 		if err != nil {
-			fmt.Println("[agent] toolLoop: LLM error:", err)
 			return "", toolCallCount, totalTokens, err
 		}
 
 		totalTokens += resp.Usage.InputTokens + resp.Usage.OutputTokens
-		fmt.Println("[agent] toolLoop: stopReason:", resp.StopReason, "content blocks:", len(resp.Content))
 
 		if resp.StopReason == "end_turn" {
 			text := extractText(resp)
-			fmt.Println("[agent] toolLoop: end_turn, text length:", len(text))
 			return text, toolCallCount, totalTokens, nil
 		}
 
 		if resp.StopReason == "tool_use" {
 			toolResults := executeToolCalls(h, resp, tokenMap, vnic)
 			toolCallCount += len(toolResults)
-			fmt.Println("[agent] toolLoop: tool_use, executed", len(toolResults), "tools")
 
 			assistantContent := marshalJSON(resp.Content)
 			msgs = append(msgs, llm.Message{Role: "assistant", Content: assistantContent})
@@ -245,10 +220,6 @@ func executeToolCalls(h *chatHandler, resp *llm.Response, tokenMap *masking.Toke
 		rawInput := string(inputJSON)
 		// Unmask tokens in tool arguments — LLM may echo masked tokens in L8Queries or JSON data
 		unmaskedInput := tokenMap.Unmask(rawInput)
-		if unmaskedInput != rawInput {
-			fmt.Println("[agent] masking: unmasked tool input for", block.Name, "- tokens replaced")
-		}
-		fmt.Println("[agent] executor: calling tool:", block.Name, "input:", unmaskedInput)
 		result, err := h.toolExec.Execute(block.Name, unmaskedInput, bearerToken)
 
 		var toolResult llm.ToolResultContent
@@ -256,15 +227,10 @@ func executeToolCalls(h *chatHandler, resp *llm.Response, tokenMap *masking.Toke
 		toolResult.ToolUseID = block.ID
 
 		if err != nil {
-			fmt.Println("[agent] executor: tool", block.Name, "error:", err)
 			toolResult.Content = "Error: " + err.Error()
 			toolResult.IsError = true
 		} else {
-			fmt.Println("[agent] executor: tool", block.Name, "result length:", len(result))
 			masked := h.maskingProxy.MaskJSON(result, block.Name, tokenMap)
-			if masked != result {
-				fmt.Println("[agent] masking: masked tool result for", block.Name, "- token map size:", tokenMap.Size())
-			}
 			toolResult.Content = masked
 		}
 

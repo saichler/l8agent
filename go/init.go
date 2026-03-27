@@ -9,8 +9,6 @@ Layer 8 Ecosystem is licensed under the Apache License, Version 2.0.
 package l8agent
 
 import (
-	"fmt"
-
 	"github.com/saichler/l8agent/go/executor"
 	"github.com/saichler/l8agent/go/llm"
 	"github.com/saichler/l8agent/go/masking"
@@ -58,7 +56,6 @@ func Initialize(config AgentConfig, vnic ifs.IVNic) error {
 		seedDefaultPrompts(config.DefaultPrompts, config.ServiceArea, vnic)
 	}
 
-	fmt.Printf("[agent] AI Agent ORM services initialized (area=%d)\n", config.ServiceArea)
 	return nil
 }
 
@@ -67,16 +64,13 @@ func Initialize(config AgentConfig, vnic ifs.IVNic) error {
 func InitializeChat(config AgentConfig, vnic ifs.IVNic) error {
 	// Create LLM client from security credentials
 	var llmClient *llm.Client
-	fmt.Printf("[agent] Retrieving LLM credentials: LLMCreds=%q, entry=%q\n", config.LLMCreds, "API_KEY")
-	v1, v2, apiKey, v4, err := vnic.Resources().Security().Credential(config.LLMCreds, "API_KEY", vnic.Resources())
-	fmt.Printf("[agent] Credential result: v1=%q, v2=%q, apiKey_len=%d, v4=%q, err=%v\n", v1, v2, len(apiKey), v4, err)
+	_, _, apiKey, _, err := vnic.Resources().Security().Credential(config.LLMCreds, "API_KEY", vnic.Resources())
 	if err != nil {
-		fmt.Println("[agent] Warning: failed to retrieve LLM credentials:", err)
+		vnic.Resources().Logger().Warning("Failed to retrieve LLM credentials: ", err.Error())
 	} else if apiKey != "" {
 		llmClient = llm.NewClient(apiKey)
-		fmt.Println("[agent] LLM client created successfully")
 	} else {
-		fmt.Println("[agent] Warning: LLM API key is empty. Chat service will return errors.")
+		vnic.Resources().Logger().Warning("LLM API key is empty. Chat service will return errors.")
 	}
 
 	// Create Schema Provider
@@ -92,7 +86,6 @@ func InitializeChat(config AgentConfig, vnic ifs.IVNic) error {
 	// Activate Chat orchestration service
 	chat.Activate(config.ServiceArea, vnic, llmClient, schemaProvider, toolExec, maskingProxy)
 
-	fmt.Printf("[agent] AI Agent Chat service initialized (area=%d)\n", config.ServiceArea)
 	return nil
 }
 
@@ -117,7 +110,6 @@ func registerTypes(resources ifs.IResources) {
 func seedDefaultPrompts(defaults []*l8agent.L8AgentPrompt, area byte, vnic ifs.IVNic) {
 	api := vnic.ServiceAPI(prompts.ServiceName, area)
 	if api == nil {
-		fmt.Println("[agent] Warning: could not get prompt service API for seeding")
 		return
 	}
 	for _, prompt := range defaults {
