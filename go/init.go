@@ -43,13 +43,19 @@ func Initialize(config AgentConfig, vnic ifs.IVNic) error {
 	registerTypes(config.Resources)
 
 	// Activate Conversation CRUD service (Service 1: metadata only)
-	conversations.Activate(config.DBCreds, config.DBName, config.ServiceArea, vnic)
+	if err := conversations.Activate(config.DBCreds, config.DBName, config.ServiceArea, vnic); err != nil {
+		return err
+	}
 
 	// Activate Message CRUD service (Service 2: chat messages)
-	messages.Activate(config.DBCreds, config.DBName, config.ServiceArea, vnic)
+	if err := messages.Activate(config.DBCreds, config.DBName, config.ServiceArea, vnic); err != nil {
+		return err
+	}
 
 	// Activate Prompt CRUD service
-	prompts.Activate(config.DBCreds, config.DBName, config.ServiceArea, vnic)
+	if err := prompts.Activate(config.DBCreds, config.DBName, config.ServiceArea, vnic); err != nil {
+		return err
+	}
 
 	// Seed default prompts if provided
 	if len(config.DefaultPrompts) > 0 {

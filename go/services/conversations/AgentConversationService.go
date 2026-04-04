@@ -29,14 +29,17 @@ const (
 
 var serviceArea byte
 
-func Activate(creds, dbname string, area byte, vnic ifs.IVNic) {
+func Activate(creds, dbname string, area byte, vnic ifs.IVNic) error {
 	serviceArea = area
 
 	realdb, user, pass, _, err := vnic.Resources().Security().Credential(creds, dbname, vnic.Resources())
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("failed to retrieve database credentials: %w", err)
 	}
-	db := openDB(realdb, user, pass)
+	db, err := openDB(realdb, user, pass)
+	if err != nil {
+		return err
+	}
 	p := postgres.NewPostgres(db, vnic.Resources())
 
 	sla := ifs.NewServiceLevelAgreement(&persist.OrmService{}, ServiceName, area, true, newConversationCallback())
@@ -58,6 +61,7 @@ func Activate(creds, dbname string, area byte, vnic ifs.IVNic) {
 	sla.SetWebService(ws)
 
 	vnic.Resources().Services().Activate(sla, vnic)
+	return nil
 }
 
 // Conversation retrieves a single conversation by ID.
@@ -147,19 +151,19 @@ func DeleteConversation(conversationId string, vnic ifs.IVNic) error {
 	return resp.Error()
 }
 
-func openDB(dbname, user, pass string) *sql.DB {
+func openDB(dbname, user, pass string) (*sql.DB, error) {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 		"127.0.0.1", 5432, user, pass, dbname)
 	db, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 	err = db.Ping()
 	if err != nil {
-		panic(fmt.Errorf("failed to connect to database: %w", err))
+		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(10)
 	db.SetConnMaxLifetime(5 * time.Minute)
-	return db
+	return db, nil
 }
