@@ -30,7 +30,9 @@ type AgentConfig struct {
 	ServiceArea      byte                // Service area for agent services
 	DBCreds          string              // Database credential key
 	DBName           string              // Database name
-	LLMCreds         string              // LLM credential key (e.g., "Anthropic")
+	LLMCreds         string              // LLM credential group (e.g., "Anthropic")
+	LLMProvider      string              // "anthropic" (default) or "openai" (OpenAI-compatible endpoint)
+	LLMCredKey       string              // Credential name within LLMCreds (default "API_KEY")
 	MaskingOverrides MaskingOverrides    // Optional: project-specific field overrides
 	DefaultPrompts   []*l8agent.L8AgentPrompt // Optional: built-in prompt templates
 }
@@ -70,11 +72,20 @@ func Initialize(config AgentConfig, vnic ifs.IVNic) error {
 func InitializeChat(config AgentConfig, vnic ifs.IVNic) error {
 	// Create LLM client from security credentials
 	var llmClient *llm.Client
-	_, _, apiKey, _, err := vnic.Resources().Security().Credential(config.LLMCreds, "API_KEY", vnic.Resources())
+	credKey := config.LLMCredKey
+	if credKey == "" {
+		credKey = "API_KEY"
+	}
+	// Credential layout: aside=base URL, yside=model (both used by the openai provider), zside=API key.
+	_, baseURL, apiKey, model, err := vnic.Resources().Security().Credential(config.LLMCreds, credKey, vnic.Resources())
 	if err != nil {
 		vnic.Resources().Logger().Warning("Failed to retrieve LLM credentials: ", err.Error())
 	} else if apiKey != "" {
-		llmClient = llm.NewClient(apiKey)
+		if config.LLMProvider == "openai" {
+			llmClient = llm.NewOpenAIClient(baseURL, apiKey, model)
+		} else {
+			llmClient = llm.NewClient(apiKey)
+		}
 	} else {
 		vnic.Resources().Logger().Warning("LLM API key is empty. Chat service will return errors.")
 	}

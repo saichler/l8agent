@@ -191,11 +191,8 @@ func toolLoop(h *chatHandler, systemPrompt string, msgs []llm.Message, toolDefs 
 			toolResults := executeToolCalls(h, resp, tokenMap, vnic)
 			toolCallCount += len(toolResults)
 
-			assistantContent := marshalJSON(resp.Content)
-			msgs = append(msgs, llm.Message{Role: "assistant", Content: assistantContent})
-
-			toolResultContent := marshalJSON(toolResults)
-			msgs = append(msgs, llm.Message{Role: "user", Content: toolResultContent})
+			msgs = append(msgs, llm.Message{Role: "assistant", Content: resp.Content})
+			msgs = append(msgs, llm.Message{Role: "user", Content: toolResults})
 			continue
 		}
 
@@ -247,11 +244,6 @@ func extractText(resp *llm.Response) string {
 		}
 	}
 	return ""
-}
-
-func marshalJSON(v interface{}) string {
-	data, _ := json.Marshal(v)
-	return string(data)
 }
 
 func truncateTitle(msg string) string {

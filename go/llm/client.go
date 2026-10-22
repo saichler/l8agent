@@ -31,6 +31,7 @@ type Client struct {
 	model     string
 	maxTokens int
 	client    *http.Client
+	openAI    bool // true: speak the OpenAI chat completions protocol
 }
 
 // Message represents a chat message sent to/from the LLM.
@@ -101,6 +102,9 @@ func NewClient(apiKey string) *Client {
 
 // SendMessage sends a message to the Claude API and returns the response.
 func (c *Client) SendMessage(systemPrompt string, messages []Message, tools []Tool) (*Response, error) {
+	if c.openAI {
+		return c.sendOpenAI(systemPrompt, messages, tools)
+	}
 	req := &Request{
 		Model:     c.model,
 		MaxTokens: c.maxTokens,
