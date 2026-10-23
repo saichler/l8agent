@@ -12,6 +12,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/saichler/l8agent/go/schema"
@@ -23,6 +25,8 @@ import (
 
 const (
 	requestTimeout = 30 // seconds
+	// maxListLimit is the largest limit allowed on a 'select *' listing query.
+	maxListLimit = 100
 )
 
 // ToolExecutor executes tool calls against Layer 8 service endpoints via the vnic.
@@ -79,10 +83,36 @@ func hasAggregate(query string) bool {
 	return false
 }
 
+// limitRe matches the limit clause of an L8Query.
+var limitRe = regexp.MustCompile(`(?i)\blimit\s+(\d+)`)
+
+// hasSmallLimit checks if an L8Query is bounded by a limit of at most maxListLimit.
+func hasSmallLimit(query string) bool {
+	m := limitRe.FindStringSubmatch(query)
+	if m == nil {
+		return false
+	}
+	n, err := strconv.Atoi(m[1])
+	return err == nil && n > 0 && n <= maxListLimit
+}
+
+// checkQueryPolicy enforces aggregate usage: it rejects select * without a specific
+// ID filter or a small limit. The LLM must use sum(), count(), avg(), etc. for totals and summaries.
+func checkQueryPolicy(query string) error {
+	if hasAggregate(query) {
+		return nil
+	}
+	lower := strings.ToLower(query)
+	if strings.Contains(lower, "select *") && !strings.Contains(lower, "id=") && !hasSmallLimit(query) {
+		return fmt.Errorf("rejected: 'select *' needs an id filter or 'limit <n>' (n <= %d). For totals and summaries use aggregate functions (sum, count, avg, min, max). Examples: select * from SalesOrder sort-by orderDate descending limit 10, select sum(totalAmount.amount) from SalesOrder", maxListLimit)
+	}
+	return nil
+}
+
 // executeQuery sends an L8Query GET request to a service via the vnic.
 // It enforces the use of aggregate functions for queries that fetch all records
-// without a specific ID filter — the LLM must use sum/count/avg/min/max instead
-// of fetching raw data and computing totals itself.
+// without a specific ID filter or a small limit — the LLM must use
+// sum/count/avg/min/max instead of fetching raw data and computing totals itself.
 func (t *ToolExecutor) executeQuery(input map[string]interface{}) (string, error) {
 	query, _ := input["query"].(string)
 	area, _ := input["area"].(float64)
@@ -92,13 +122,8 @@ func (t *ToolExecutor) executeQuery(input map[string]interface{}) (string, error
 		return "", errors.New("l8query requires 'query', 'area', and 'service'")
 	}
 
-	// Enforce aggregate usage: reject select * without a specific ID filter.
-	// The LLM must use sum(), count(), avg(), etc. for totals and summaries.
-	if !hasAggregate(query) {
-		lower := strings.ToLower(query)
-		if strings.Contains(lower, "select *") && !strings.Contains(lower, "id=") {
-			return "", fmt.Errorf("rejected: use aggregate functions (sum, count, avg, min, max) instead of 'select *' for summaries. Example: select sum(totalAmount.amount) from SalesOrder")
-		}
+	if err := checkQueryPolicy(query); err != nil {
+		return "", err
 	}
 
 	elems := t.vnic.LeaderRequest(service, byte(area), ifs.GET, query, requestTimeout)

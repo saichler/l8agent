@@ -25,6 +25,7 @@ import (
 const (
 	defaultMaxToolCalls = 10
 	defaultMaxHistory   = 20
+	finalAnswerPrompt   = "\n\nYou have used all the tool calls available for this request. Do not call any more tools: answer the user now using the tool results above, and say briefly what you could not find."
 	baseSystemPrompt    = `You are an AI assistant for a Layer 8 application. You help users query data, create records, and analyze information using the provided tools.
 
 Rules:
@@ -35,6 +36,8 @@ Rules:
 - Use list_modules to discover available services and models.
 
 L8Query Guidelines:
+- L8Query is not SQL: use 'sort-by <field> [descending]' (not ORDER BY), there is no 'where true' or 'where 1=1' (omit where instead), and use the exact field names returned by describe_model.
+- To list records use 'select * ... limit <n>' (n up to 100) or select specific columns, e.g. select * from Employee sort-by hireDate descending limit 5
 - For totals, sums, counts, or averages, ALWAYS use aggregate queries: select sum(field), count(*), avg(field), min(field), max(field).
 - Do NOT fetch all records and compute totals yourself — use the built-in aggregate functions.
 - GROUP-BY is supported: select count(*),sum(totalAmount.amount) from SalesOrder group-by status
@@ -200,6 +203,15 @@ func toolLoop(h *chatHandler, systemPrompt string, msgs []llm.Message, toolDefs 
 		return text, toolCallCount, totalTokens, nil
 	}
 
+	// Tool budget exhausted: ask the LLM to answer with what it has gathered so far.
+	resp, err := h.llmClient.SendMessage(systemPrompt+finalAnswerPrompt, msgs, toolDefs)
+	if err != nil {
+		return "", toolCallCount, totalTokens, err
+	}
+	totalTokens += resp.Usage.InputTokens + resp.Usage.OutputTokens
+	if text := extractText(resp); resp.StopReason != "tool_use" && text != "" {
+		return text, toolCallCount, totalTokens, nil
+	}
 	return "I've reached the maximum number of tool calls for this request. Please try a more specific question.", toolCallCount, totalTokens, nil
 }
 
