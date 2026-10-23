@@ -46,7 +46,7 @@ Note: Money fields are nested objects with 'amount' (in cents) and 'currencyCode
 					},
 					"service": map[string]interface{}{
 						"type":        "string",
-						"description": "The service name (e.g., 'Employee', 'Dept'). Max 10 characters.",
+						"description": "The service name exactly as listed by list_modules (e.g., 'Employee', 'Dept'). This is the service, not the model name.",
 					},
 				},
 				"required": []string{"query", "area", "service"},

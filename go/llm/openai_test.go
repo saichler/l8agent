@@ -47,3 +47,31 @@ func TestOpenAIRoundTrip(t *testing.T) {
 		t.Errorf("tool linkage wrong: %+v", got.Messages)
 	}
 }
+
+func TestOpenAIFinalMessageForbidsTools(t *testing.T) {
+	var got map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&got)
+		w.Write([]byte(`{"id":"1","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"done"}}]}`))
+	}))
+	defer srv.Close()
+
+	c := NewOpenAIClient(srv.URL+"/v1", "k", "m")
+	tools := []Tool{{Name: "get", Description: "d", InputSchema: map[string]string{"type": "object"}}}
+	if _, err := c.SendMessage("sys", []Message{{Role: "user", Content: "hi"}}, tools); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["tool_choice"]; ok {
+		t.Errorf("SendMessage must not set tool_choice: %v", got["tool_choice"])
+	}
+	resp, err := c.SendFinalMessage("sys", []Message{{Role: "user", Content: "hi"}}, tools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["tool_choice"] != "none" || got["tools"] == nil {
+		t.Errorf("SendFinalMessage must keep tools and set tool_choice none: %v", got)
+	}
+	if resp.StopReason != "end_turn" || resp.Content[0].Text != "done" {
+		t.Errorf("bad response %+v", resp)
+	}
+}

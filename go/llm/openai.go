@@ -64,6 +64,8 @@ type oaiRequest struct {
 	MaxTokens int          `json:"max_tokens"`
 	Messages  []oaiMessage `json:"messages"`
 	Tools     []oaiTool    `json:"tools,omitempty"`
+	// ToolChoice is "none" to forbid tool calls, or empty for the default (auto).
+	ToolChoice string `json:"tool_choice,omitempty"`
 }
 
 type oaiResponse struct {
@@ -128,12 +130,15 @@ func toOpenAITools(tools []Tool) []oaiTool {
 	return out
 }
 
-func (c *Client) sendOpenAI(systemPrompt string, messages []Message, tools []Tool) (*Response, error) {
+func (c *Client) sendOpenAI(systemPrompt string, messages []Message, tools []Tool, noTools bool) (*Response, error) {
 	req := &oaiRequest{
 		Model:     c.model,
 		MaxTokens: c.maxTokens,
 		Messages:  toOpenAIMessages(systemPrompt, messages),
 		Tools:     toOpenAITools(tools),
+	}
+	if noTools && len(tools) > 0 {
+		req.ToolChoice = "none"
 	}
 	body, err := json.Marshal(req)
 	if err != nil {

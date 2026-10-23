@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -126,7 +127,12 @@ func (t *ToolExecutor) executeQuery(input map[string]interface{}) (string, error
 		return "", err
 	}
 
-	elems := t.vnic.LeaderRequest(service, byte(area), ifs.GET, query, requestTimeout)
+	service, svcArea, err := resolveService(t.serviceCatalog(), service, int32(area), queryModel(query))
+	if err != nil {
+		return "", err
+	}
+
+	elems := t.vnic.LeaderRequest(service, byte(svcArea), ifs.GET, query, requestTimeout)
 	if elems.Error() != nil {
 		return "", elems.Error()
 	}
@@ -144,10 +150,16 @@ func (t *ToolExecutor) executeMutate(input map[string]interface{}, action ifs.Ac
 		return "", fmt.Errorf("%s requires 'area', 'service', and 'data'", actionName(action))
 	}
 
+	catalog := t.serviceCatalog()
+	service, svcArea, err := resolveService(catalog, service, int32(area), "")
+	if err != nil {
+		return "", err
+	}
+
 	// Resolve the protobuf type from the service catalog
-	modelName := t.resolveModelName(service, int32(area))
+	modelName := catalog[service][svcArea]
 	if modelName == "" {
-		return "", fmt.Errorf("cannot resolve model type for service %s area %d", service, int(area))
+		return "", fmt.Errorf("cannot resolve model type for service %s area %d", service, int(svcArea))
 	}
 
 	// Create a new protobuf instance and unmarshal the JSON data into it
@@ -156,7 +168,7 @@ func (t *ToolExecutor) executeMutate(input map[string]interface{}, action ifs.Ac
 		return "", fmt.Errorf("failed to unmarshal data for %s: %s", modelName, err.Error())
 	}
 
-	elems := t.vnic.LeaderRequest(service, byte(area), action, pbMsg, requestTimeout)
+	elems := t.vnic.LeaderRequest(service, byte(svcArea), action, pbMsg, requestTimeout)
 	if elems.Error() != nil {
 		return "", elems.Error()
 	}
@@ -174,8 +186,13 @@ func (t *ToolExecutor) executeDelete(input map[string]interface{}) (string, erro
 		return "", errors.New("delete_record requires 'area', 'service', and 'query'")
 	}
 
+	service, svcArea, err := resolveService(t.serviceCatalog(), service, int32(area), queryModel(query))
+	if err != nil {
+		return "", err
+	}
+
 	l8query := &l8api.L8Query{Text: query}
-	elems := t.vnic.LeaderRequest(service, byte(area), ifs.DELETE, l8query, requestTimeout)
+	elems := t.vnic.LeaderRequest(service, byte(svcArea), ifs.DELETE, l8query, requestTimeout)
 	if elems.Error() != nil {
 		return "", elems.Error()
 	}
@@ -183,18 +200,85 @@ func (t *ToolExecutor) executeDelete(input map[string]interface{}) (string, erro
 	return t.marshalResponse(elems)
 }
 
-// resolveModelName looks up the protobuf type name for a service name and area
-// from the local service registry.
-func (t *ToolExecutor) resolveModelName(serviceName string, serviceArea int32) string {
+// serviceCatalog returns service name -> area -> model name from the local service registry.
+func (t *ToolExecutor) serviceCatalog() map[string]map[int32]string {
+	catalog := make(map[string]map[int32]string)
 	services := t.vnic.Resources().SysConfig().Services
 	if services == nil || services.ServiceToAreas == nil {
+		return catalog
+	}
+	for svcName, svcAreas := range services.ServiceToAreas {
+		if svcAreas.Models != nil {
+			catalog[svcName] = svcAreas.Models
+		}
+	}
+	return catalog
+}
+
+// fromRe matches the model name in the from clause of an L8Query.
+var fromRe = regexp.MustCompile(`(?i)\bfrom\s+([A-Za-z0-9_]+)`)
+
+// queryModel returns the model name in the from clause of an L8Query, or "".
+func queryModel(query string) string {
+	m := fromRe.FindStringSubmatch(query)
+	if m == nil {
 		return ""
 	}
-	svcAreas, ok := services.ServiceToAreas[serviceName]
-	if !ok || svcAreas.Models == nil {
-		return ""
+	return m[1]
+}
+
+// serviceOfModel finds the service serving a model name (case-insensitive), preferring
+// the given service and area when the model is served by more than one.
+func serviceOfModel(catalog map[string]map[int32]string, model, service string, area int32) (string, int32, bool) {
+	if model == "" {
+		return "", 0, false
 	}
-	return svcAreas.Models[serviceArea]
+	if m, ok := catalog[service][area]; ok && strings.EqualFold(m, model) {
+		return service, area, true
+	}
+	found, foundArea := "", int32(0)
+	for svc, models := range catalog {
+		for a, m := range models {
+			if strings.EqualFold(m, model) && (found == "" || a == area) {
+				found, foundArea = svc, a
+			}
+		}
+	}
+	return found, foundArea, found != ""
+}
+
+// resolveService validates the service name and area supplied by the LLM. When they do not
+// match a registered service, it resolves them from the model name instead (the query's from
+// clause, or the service name itself when the LLM passed a model name), so that a wrong name
+// fails fast with the valid choices instead of waiting for the request to time out.
+func resolveService(catalog map[string]map[int32]string, service string, area int32, model string) (string, int32, error) {
+	if len(catalog) == 0 {
+		return service, area, nil
+	}
+	// The model in the query's from clause decides the service.
+	if svc, a, ok := serviceOfModel(catalog, model, service, area); ok {
+		return svc, a, nil
+	}
+	if _, ok := catalog[service][area]; ok {
+		return service, area, nil
+	}
+	if svc, a, ok := serviceOfModel(catalog, service, service, area); ok {
+		return svc, a, nil
+	}
+	if models := catalog[service]; len(models) == 1 {
+		for a := range models {
+			return service, a, nil
+		}
+	}
+	entries := make([]string, 0, len(catalog))
+	for svc, models := range catalog {
+		for a, m := range models {
+			entries = append(entries, fmt.Sprintf("%s (area %d, model %s)", svc, a, m))
+		}
+	}
+	sort.Strings(entries)
+	return "", 0, fmt.Errorf("unknown service %q in area %d; use the service name and area from list_modules, not the model name: %s",
+		service, area, strings.Join(entries, ", "))
 }
 
 // unmarshalToProto creates a new protobuf instance of the given type and

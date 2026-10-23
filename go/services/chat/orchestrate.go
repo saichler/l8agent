@@ -204,7 +204,7 @@ func toolLoop(h *chatHandler, systemPrompt string, msgs []llm.Message, toolDefs 
 	}
 
 	// Tool budget exhausted: ask the LLM to answer with what it has gathered so far.
-	resp, err := h.llmClient.SendMessage(systemPrompt+finalAnswerPrompt, msgs, toolDefs)
+	resp, err := h.llmClient.SendFinalMessage(systemPrompt+finalAnswerPrompt, msgs, toolDefs)
 	if err != nil {
 		return "", toolCallCount, totalTokens, err
 	}

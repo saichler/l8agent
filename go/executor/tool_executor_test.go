@@ -32,3 +32,36 @@ func TestCheckQueryPolicy(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveService(t *testing.T) {
+	catalog := map[string]map[int32]string{
+		"PhyClient": {50: "PhysioClient"},
+		"PhyAppt":   {50: "Appointment"},
+		"AgntMsg":   {55: "L8AgentChatMessage"},
+	}
+	cases := []struct {
+		service, model string
+		area           int32
+		wantSvc        string
+		wantArea       int32
+	}{
+		{"PhyClient", "PhysioClient", 50, "PhyClient", 50},  // valid as given
+		{"PhysioClie", "PhysioClient", 50, "PhyClient", 50}, // truncated model name as service
+		{"PhyClient", "PhysioClient", 0, "PhyClient", 50},   // wrong area
+		{"PhyAppt", "PhysioClient", 50, "PhyClient", 50},    // from clause wins over a wrong service
+		{"PhysioClient", "", 50, "PhyClient", 50},           // model name passed as service, no query
+		{"AgntMsg", "", 50, "AgntMsg", 55},                  // only one area for the service
+	}
+	for _, c := range cases {
+		svc, area, err := resolveService(catalog, c.service, c.area, c.model)
+		if err != nil || svc != c.wantSvc || area != c.wantArea {
+			t.Errorf("resolveService(%q, %d, %q) = %q, %d, %v; want %q, %d", c.service, c.area, c.model, svc, area, err, c.wantSvc, c.wantArea)
+		}
+	}
+	if _, _, err := resolveService(catalog, "Nope", 50, "Nothing"); err == nil {
+		t.Error("expected an error for an unknown service and model")
+	}
+	if got := queryModel("select count(*) FROM PhysioClient where status=1"); got != "PhysioClient" {
+		t.Errorf("queryModel = %q", got)
+	}
+}

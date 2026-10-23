@@ -54,6 +54,8 @@ type Request struct {
 	System    string    `json:"system,omitempty"`
 	Messages  []Message `json:"messages"`
 	Tools     []Tool    `json:"tools,omitempty"`
+	// ToolChoice is {"type":"none"} to forbid tool calls, or nil for the default (auto).
+	ToolChoice interface{} `json:"tool_choice,omitempty"`
 }
 
 // Response is the Claude API response body.
@@ -102,8 +104,18 @@ func NewClient(apiKey string) *Client {
 
 // SendMessage sends a message to the Claude API and returns the response.
 func (c *Client) SendMessage(systemPrompt string, messages []Message, tools []Tool) (*Response, error) {
+	return c.send(systemPrompt, messages, tools, false)
+}
+
+// SendFinalMessage sends a message that must be answered with text: the tools stay
+// defined (the history references them) but the LLM is not allowed to call them.
+func (c *Client) SendFinalMessage(systemPrompt string, messages []Message, tools []Tool) (*Response, error) {
+	return c.send(systemPrompt, messages, tools, true)
+}
+
+func (c *Client) send(systemPrompt string, messages []Message, tools []Tool, noTools bool) (*Response, error) {
 	if c.openAI {
-		return c.sendOpenAI(systemPrompt, messages, tools)
+		return c.sendOpenAI(systemPrompt, messages, tools, noTools)
 	}
 	req := &Request{
 		Model:     c.model,
@@ -111,6 +123,9 @@ func (c *Client) SendMessage(systemPrompt string, messages []Message, tools []To
 		System:    systemPrompt,
 		Messages:  messages,
 		Tools:     tools,
+	}
+	if noTools && len(tools) > 0 {
+		req.ToolChoice = map[string]string{"type": "none"}
 	}
 
 	body, err := json.Marshal(req)

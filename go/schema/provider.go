@@ -11,6 +11,8 @@ package schema
 import (
 	"bytes"
 	"fmt"
+	"sort"
+
 	"github.com/saichler/l8types/go/ifs"
 	"github.com/saichler/l8types/go/types/l8reflect"
 )
@@ -34,8 +36,13 @@ func (p *Provider) GetTier1Schema() string {
 }
 
 // DescribeModel returns the full field definitions for a specific model (Tier 2).
+// Nested struct fields are listed with their dotted path (e.g. AuditInfo.CreatedAt)
+// so the LLM can query and sort by them.
 func (p *Provider) DescribeModel(modelName string) string {
 	node, ok := p.resources.Introspector().Node(modelName)
+	if !ok {
+		node, ok = p.resources.Introspector().NodeByTypeName(modelName)
+	}
 	if !ok {
 		return "Model '" + modelName + "' not found."
 	}
@@ -44,22 +51,44 @@ func (p *Provider) DescribeModel(modelName string) string {
 	buff.WriteString("Model: ")
 	buff.WriteString(node.TypeName)
 	buff.WriteString("\nFields:\n")
+	writeFields(&buff, node, "", 0)
+	return buff.String()
+}
 
-	for name, attr := range node.Attributes {
+// maxNestedDepth limits how deep nested struct fields are expanded in DescribeModel.
+const maxNestedDepth = 2
+
+// writeFields writes the attributes of node sorted by name, expanding nested structs.
+func writeFields(buff *bytes.Buffer, node *l8reflect.L8Node, prefix string, depth int) {
+	names := make([]string, 0, len(node.Attributes))
+	for name := range node.Attributes {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		attr := node.Attributes[name]
+		path := prefix + name
 		buff.WriteString("  - ")
-		buff.WriteString(name)
+		buff.WriteString(path)
 		buff.WriteString(" (")
+		if attr.IsSlice {
+			buff.WriteString("list of ")
+		} else if attr.IsMap {
+			buff.WriteString("map of ")
+		}
 		buff.WriteString(attr.TypeName)
 		buff.WriteString(")")
 		if attr.TypeName == "*erp.Money" || attr.TypeName == "erp.Money" {
 			buff.WriteString(" — nested: .amount (int64, cents), .currencyCode (string). For aggregation use ")
-			buff.WriteString(name)
+			buff.WriteString(path)
 			buff.WriteString(".amount")
 		}
 		buff.WriteString("\n")
+		if attr.IsStruct && !attr.IsSlice && !attr.IsMap && depth < maxNestedDepth && len(attr.Attributes) > 0 {
+			writeFields(buff, attr, path+".", depth+1)
+		}
 	}
-
-	return buff.String()
 }
 
 // buildTier1 builds the compact Tier 1 schema from the service catalog and introspector.
