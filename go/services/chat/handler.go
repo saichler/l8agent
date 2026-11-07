@@ -26,6 +26,7 @@ type chatHandler struct {
 	schema       *schema.Provider
 	toolExec     *executor.ToolExecutor
 	maskingProxy *masking.Proxy
+	helpDocs     string // project help documentation used by '@help' prompts
 	sla          *ifs.ServiceLevelAgreement
 }
 
@@ -45,6 +46,11 @@ func (h *chatHandler) Activate(sla *ifs.ServiceLevelAgreement, vnic ifs.IVNic) e
 		}
 		if v, ok := args[3].(*masking.Proxy); ok {
 			h.maskingProxy = v
+		}
+		if len(args) >= 5 {
+			if v, ok := args[4].(string); ok {
+				h.helpDocs = v
+			}
 		}
 	}
 

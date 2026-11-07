@@ -35,6 +35,7 @@ type AgentConfig struct {
 	LLMCredKey       string              // Credential name within LLMCreds (default "API_KEY")
 	MaskingOverrides MaskingOverrides    // Optional: project-specific field overrides
 	DefaultPrompts   []*l8agent.L8AgentPrompt // Optional: built-in prompt templates
+	HelpDocs         string              // Optional: markdown help for '@help <question>' prompts (menus and how-tos of the project)
 }
 
 // Initialize activates ORM agent services (Conversations, Messages, Prompts).
@@ -101,7 +102,7 @@ func InitializeChat(config AgentConfig, vnic ifs.IVNic) error {
 	toolExec := executor.NewToolExecutor(vnic, schemaProvider)
 
 	// Activate Chat orchestration service
-	chat.Activate(config.ServiceArea, vnic, llmClient, schemaProvider, toolExec, maskingProxy)
+	chat.Activate(config.ServiceArea, vnic, llmClient, schemaProvider, toolExec, maskingProxy, config.HelpDocs)
 
 	return nil
 }

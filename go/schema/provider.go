@@ -35,6 +35,30 @@ func (p *Provider) GetTier1Schema() string {
 	return p.tier1Cache
 }
 
+// ModelNames returns the sorted, de-duplicated model type names of the service catalog.
+func (p *Provider) ModelNames() []string {
+	set := map[string]bool{}
+	services := p.resources.SysConfig().Services
+	if services != nil && services.ServiceToAreas != nil {
+		for _, svcAreas := range services.ServiceToAreas {
+			if svcAreas.Models == nil {
+				continue
+			}
+			for _, modelName := range svcAreas.Models {
+				if modelName != "" {
+					set[modelName] = true
+				}
+			}
+		}
+	}
+	names := make([]string, 0, len(set))
+	for n := range set {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // DescribeModel returns the full field definitions for a specific model (Tier 2).
 // Nested struct fields are listed with their dotted path (e.g. AuditInfo.CreatedAt)
 // so the LLM can query and sort by them.

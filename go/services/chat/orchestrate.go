@@ -97,12 +97,25 @@ func orchestrate(h *chatHandler, facade *l8agent.L8AgentChatConversation, vnic i
 	maskedUserMsg := h.maskingProxy.MaskText(userChatMsg.Message, tokenMap)
 	userChatMsg.Message = maskedUserMsg
 
-	systemPrompt := baseSystemPrompt + "\n\n" + h.schema.GetTier1Schema()
-	llmMessages := buildMessages(allMsgs)
-	toolDefs := tools.GetToolDefinitions()
-
-	// Step 5: Call LLM with tool loop
-	response, toolCallCount, totalTokens, err := toolLoop(h, systemPrompt, llmMessages, toolDefs, tokenMap, vnic)
+	// Step 5: Call the LLM. '@help' and '@web' prompts are routed to their own modes; everything else
+	// is the default data-assistant flow with tools.
+	mode, question := parsePrefix(userMsg.Message)
+	var (
+		response      string
+		toolCallCount int
+		totalTokens   int
+	)
+	switch mode {
+	case modeHelp:
+		response, totalTokens, err = answerHelp(h, question, allMsgs, tokenMap)
+	case modeWeb:
+		response, totalTokens, err = answerWeb(h, question, allMsgs, tokenMap)
+	default:
+		systemPrompt := baseSystemPrompt + "\n\n" + h.schema.GetTier1Schema()
+		llmMessages := buildMessages(allMsgs)
+		toolDefs := tools.GetToolDefinitions()
+		response, toolCallCount, totalTokens, err = toolLoop(h, systemPrompt, llmMessages, toolDefs, tokenMap, vnic)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("LLM error: %w", err)
 	}
@@ -166,7 +179,11 @@ func buildMessages(msgs []*l8agent.L8AgentChatMessage) []llm.Message {
 		if msg.IsLlm {
 			role = "assistant"
 		}
-		result = append(result, llm.Message{Role: role, Content: msg.Message})
+		content := msg.Message
+		if !msg.IsLlm {
+			content = stripPrefix(content)
+		}
+		result = append(result, llm.Message{Role: role, Content: content})
 	}
 	return result
 }
