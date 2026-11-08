@@ -44,7 +44,7 @@ type Client struct {
 }
 
 // New returns a client for the service at baseURL (e.g. https://tools.example.com), or nil if baseURL is empty.
-func New(baseURL, apiKey string) *Client {
+func New(baseURL, apiKey string, wrap ...func(http.RoundTripper) http.RoundTripper) *Client {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
 		return nil
@@ -56,7 +56,11 @@ func New(baseURL, apiKey string) *Client {
 		MaxIdleConns:        4,
 		IdleConnTimeout:     30 * time.Second,
 	}
-	return &Client{baseURL: baseURL, apiKey: apiKey, http: &http.Client{Timeout: requestTimeout, Transport: transport}}
+	var rt http.RoundTripper = transport
+	for _, w := range wrap {
+		rt = w(rt)
+	}
+	return &Client{baseURL: baseURL, apiKey: apiKey, http: &http.Client{Timeout: requestTimeout, Transport: rt}}
 }
 
 // Definitions returns the tool definitions to pass to the model.

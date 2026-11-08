@@ -9,7 +9,10 @@ Layer 8 Ecosystem is licensed under the Apache License, Version 2.0.
 package l8agent
 
 import (
+	"net/http"
+
 	"github.com/saichler/l8agent/go/executor"
+	"github.com/saichler/l8agent/go/lanfirst"
 	"github.com/saichler/l8agent/go/llm"
 	"github.com/saichler/l8agent/go/masking"
 	"github.com/saichler/l8agent/go/schema"
@@ -37,6 +40,8 @@ type AgentConfig struct {
 	MaskingOverrides MaskingOverrides    // Optional: project-specific field overrides
 	DefaultPrompts   []*l8agent.L8AgentPrompt // Optional: built-in prompt templates
 	WebToolsURL      string              // Optional: base URL of a web tools service (/v1/search, /v1/fetch) giving '@web' prompts live web search; authenticated with the LLM API key
+	LANRoutes        map[string]string   // Optional: public host -> LAN "ip:port" (e.g. "llm.test-llm.dev": "192.168.1.124:8080"). Those hosts are tried on the LAN first; the public address is used only if the LAN cannot be reached
+	LANCA            string              // Optional: PEM of the CA that signed the LAN servers' certificates
 	HelpDocs         string              // Optional: markdown help for '@help <question>' prompts (menus and how-tos of the project)
 }
 
@@ -86,6 +91,7 @@ func InitializeChat(config AgentConfig, vnic ifs.IVNic) error {
 	} else if apiKey != "" {
 		if config.LLMProvider == "openai" {
 			llmClient = llm.NewOpenAIClient(baseURL, apiKey, model)
+			llmClient.WrapTransport(lanWrap(config, vnic))
 		} else {
 			llmClient = llm.NewClient(apiKey)
 		}
@@ -104,9 +110,22 @@ func InitializeChat(config AgentConfig, vnic ifs.IVNic) error {
 	toolExec := executor.NewToolExecutor(vnic, schemaProvider)
 
 	// Activate Chat orchestration service
-	chat.Activate(config.ServiceArea, vnic, llmClient, schemaProvider, toolExec, maskingProxy, config.HelpDocs, webtools.New(config.WebToolsURL, apiKey))
+	chat.Activate(config.ServiceArea, vnic, llmClient, schemaProvider, toolExec, maskingProxy, config.HelpDocs, webtools.New(config.WebToolsURL, apiKey, lanWrap(config, vnic)))
 
 	return nil
+}
+
+// lanWrap returns a transport wrapper that tries config.LANRoutes on the local network before the public
+// address. With no routes it changes nothing; a bad LANCA is logged and the LAN is not used.
+func lanWrap(config AgentConfig, vnic ifs.IVNic) func(http.RoundTripper) http.RoundTripper {
+	return func(rt http.RoundTripper) http.RoundTripper {
+		wrapped, err := lanfirst.Wrap(rt, config.LANRoutes, config.LANCA)
+		if err != nil {
+			vnic.Resources().Logger().Warning("LAN-first disabled: ", err.Error())
+			return rt
+		}
+		return wrapped
+	}
 }
 
 // registerTypes registers agent protobuf types with the introspector.

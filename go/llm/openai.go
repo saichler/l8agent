@@ -32,6 +32,16 @@ func NewOpenAIClient(baseURL, apiKey, model string) *Client {
 	}
 }
 
+// WrapTransport replaces the client's HTTP transport with wrap(current). It is used to add connection
+// behavior such as trying the local network before the public address.
+func (c *Client) WrapTransport(wrap func(http.RoundTripper) http.RoundTripper) {
+	rt := c.client.Transport
+	if rt == nil {
+		rt = http.DefaultTransport
+	}
+	c.client.Transport = wrap(rt)
+}
+
 type oaiToolCall struct {
 	ID       string `json:"id"`
 	Type     string `json:"type"`
