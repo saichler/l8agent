@@ -11,9 +11,12 @@ package webtools
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -27,6 +30,10 @@ const (
 
 	maxResultChars = 12000
 	requestTimeout = 45 * time.Second
+	// dialTimeout is short and attempts are retried: a connection that does not open quickly is
+	// usually lost at the network edge, and a new attempt succeeds.
+	dialTimeout = 6 * time.Second
+	attempts    = 4
 )
 
 // Client calls the web tools service.
@@ -42,7 +49,14 @@ func New(baseURL, apiKey string) *Client {
 	if baseURL == "" {
 		return nil
 	}
-	return &Client{baseURL: baseURL, apiKey: apiKey, http: &http.Client{Timeout: requestTimeout}}
+	transport := &http.Transport{
+		Proxy:               http.ProxyFromEnvironment,
+		DialContext:         (&net.Dialer{Timeout: dialTimeout}).DialContext,
+		TLSHandshakeTimeout: dialTimeout,
+		MaxIdleConns:        4,
+		IdleConnTimeout:     30 * time.Second,
+	}
+	return &Client{baseURL: baseURL, apiKey: apiKey, http: &http.Client{Timeout: requestTimeout, Transport: transport}}
 }
 
 // Definitions returns the tool definitions to pass to the model.
@@ -97,13 +111,7 @@ func (c *Client) Execute(name, input string) (string, error) {
 		return "", fmt.Errorf("unknown web tool %q", name)
 	}
 	body, _ := json.Marshal(args)
-	req, err := http.NewRequest(http.MethodPost, c.baseURL+path, bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.http.Do(req)
+	resp, err := c.post(path, body)
 	if err != nil {
 		return "", err
 	}
@@ -120,4 +128,29 @@ func (c *Client) Execute(name, input string) (string, error) {
 		out = out[:maxResultChars] + "...[truncated]"
 	}
 	return out, nil
+}
+
+// post sends the request, retrying when the connection cannot be opened.
+func (c *Client) post(path string, body []byte) (*http.Response, error) {
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		req, err := http.NewRequest(http.MethodPost, c.baseURL+path, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := c.http.Do(req)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		var nerr net.Error
+		if !errors.As(err, &nerr) || !nerr.Timeout() {
+			if _, isOp := err.(*url.Error); !isOp {
+				return nil, err
+			}
+		}
+	}
+	return nil, lastErr
 }
