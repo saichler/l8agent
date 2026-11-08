@@ -12,6 +12,7 @@ import (
 	"github.com/saichler/l8agent/go/executor"
 	"github.com/saichler/l8agent/go/llm"
 	"github.com/saichler/l8agent/go/masking"
+	"github.com/saichler/l8agent/go/webtools"
 	"github.com/saichler/l8agent/go/schema"
 	"github.com/saichler/l8agent/go/services/conversations"
 	"github.com/saichler/l8agent/go/services/messages"
@@ -27,6 +28,7 @@ type chatHandler struct {
 	toolExec     *executor.ToolExecutor
 	maskingProxy *masking.Proxy
 	helpDocs     string // project help documentation used by '@help' prompts
+	web          *webtools.Client // web search/fetch used by '@web' prompts (nil: answer from model knowledge)
 	sla          *ifs.ServiceLevelAgreement
 }
 
@@ -50,6 +52,11 @@ func (h *chatHandler) Activate(sla *ifs.ServiceLevelAgreement, vnic ifs.IVNic) e
 		if len(args) >= 5 {
 			if v, ok := args[4].(string); ok {
 				h.helpDocs = v
+			}
+		}
+		if len(args) >= 6 {
+			if v, ok := args[5].(*webtools.Client); ok {
+				h.web = v
 			}
 		}
 	}

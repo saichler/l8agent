@@ -14,6 +14,7 @@ import (
 	"github.com/saichler/l8agent/go/executor"
 	"github.com/saichler/l8agent/go/llm"
 	"github.com/saichler/l8agent/go/masking"
+	"github.com/saichler/l8agent/go/webtools"
 	"github.com/saichler/l8agent/go/schema"
 	"github.com/saichler/l8agent/go/types/l8agent"
 	"github.com/saichler/l8types/go/ifs"
@@ -25,14 +26,14 @@ const (
 	ServiceName = "AgntChat"
 )
 
-func Activate(area byte, vnic ifs.IVNic, llmClient *llm.Client, schemaProvider *schema.Provider, toolExec *executor.ToolExecutor, maskingProxy *masking.Proxy, helpDocs string) {
+func Activate(area byte, vnic ifs.IVNic, llmClient *llm.Client, schemaProvider *schema.Provider, toolExec *executor.ToolExecutor, maskingProxy *masking.Proxy, helpDocs string, webClient *webtools.Client) {
 	handler := &chatHandler{}
 
 	sla := ifs.NewServiceLevelAgreement(handler, ServiceName, area, false, newChatCallback(handler))
 	sla.SetServiceItem(&l8agent.L8AgentChatConversation{})
 	sla.SetServiceItemList(&l8agent.L8AgentChatConversationList{})
 	sla.SetPrimaryKeys("ConversationId")
-	sla.SetArgs(llmClient, schemaProvider, toolExec, maskingProxy, helpDocs)
+	sla.SetArgs(llmClient, schemaProvider, toolExec, maskingProxy, helpDocs, webClient)
 
 	ws := web.New(ServiceName, area, 0)
 	ws.AddEndpoint(&l8agent.L8AgentChatConversation{}, ifs.POST, &l8agent.L8AgentChatMessage{})
