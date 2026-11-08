@@ -8,6 +8,7 @@ package chat
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/saichler/l8agent/go/llm"
@@ -88,10 +89,16 @@ func webToolLoop(h *chatHandler, msgs []llm.Message, tokenMap *masking.TokenMap)
 			r := llm.ToolResultContent{Type: "tool_result", ToolUseID: block.ID}
 			if calls > maxWebToolCalls {
 				r.Content, r.IsError = "Error: tool call limit reached; answer with what you have.", true
-			} else if out, err := h.web.Execute(block.Name, tokenMap.Unmask(string(block.Input))); err != nil {
-				r.Content, r.IsError = "Error: "+err.Error(), true
 			} else {
-				r.Content = out
+				start := time.Now()
+				out, err := h.web.Execute(block.Name, tokenMap.Unmask(string(block.Input)))
+				if err != nil {
+					log.Printf("[agent @web] %s %s failed after %s: %v", block.Name, block.Input, time.Since(start).Round(time.Millisecond), err)
+					r.Content, r.IsError = "Error: "+err.Error(), true
+				} else {
+					log.Printf("[agent @web] %s %s ok in %s (%d chars)", block.Name, block.Input, time.Since(start).Round(time.Millisecond), len(out))
+					r.Content = out
+				}
 			}
 			results = append(results, r)
 		}
